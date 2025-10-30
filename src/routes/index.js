@@ -5,10 +5,12 @@ const router = express.Router();
 
 const userRoutes = require('./userRoutes');
 const eventRoutes = require('./eventRoutes');
+const adminRoutes = require('./adminRoutes'); // <--- AGGIUNTA
 
 // --- Montaggio Rotte ---
 router.use('/users', userRoutes); 
 router.use('/events', eventRoutes); 
+router.use('/admin', adminRoutes); // <--- AGGIUNTA
 
 // Endpoint di test salute server
 router.get('/health', (req, res) => {
