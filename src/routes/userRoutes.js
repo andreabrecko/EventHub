@@ -3,11 +3,20 @@
 const express = require('express');
 const router = express.Router();
 const userController = require('../controllers/userController');
+const authMiddleware = require('../middleware/authMiddleware'); 
 
-// Rotta per la registrazione: POST /users/register
+// Rotte pubbliche
 router.post('/register', userController.registerUser);
-
-// Rotta per il login: POST /users/login
 router.post('/login', userController.loginUser); 
+
+// Rotta protetta (per testare il token)
+router.get('/me', 
+    authMiddleware.protect, // Richiede un token valido
+    (req, res) => {
+        res.status(200).json({
+            message: 'Dati profilo utente autenticato',
+            user: req.user
+        });
+});
 
 module.exports = router;

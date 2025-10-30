@@ -4,12 +4,13 @@ const express = require('express');
 const router = express.Router();
 
 const userRoutes = require('./userRoutes');
+const eventRoutes = require('./eventRoutes');
 
 // --- Montaggio Rotte ---
-// Tutti gli endpoint saranno /api/users/...
 router.use('/users', userRoutes); 
+router.use('/events', eventRoutes); 
 
-// Endpoint di test generale per verificare che il server sia attivo
+// Endpoint di test salute server
 router.get('/health', (req, res) => {
     res.status(200).json({ status: 'API running', service: 'EventHub' });
 });
