@@ -1,0 +1,11 @@
+# Dipendenze
+/node_modules
+
+# Variabili d'Ambiente (CRITICO)
+.env
+
+# Log e file di sistema
+npm-debug.log*
+*.log
+.DS_Store
+.idea
