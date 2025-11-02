@@ -1,27 +1,24 @@
-// File: src/config/db.js
+// EventHub/eventhub-backend/src/config/db.js
 
-const { Pool } = require('pg');
+// 1. Commenta l'import di 'pg' se non è strettamente necessario altrove
+// const { Pool } = require('pg'); 
 
-const pool = new Pool({
-    user: process.env.DB_USER,
-    host: process.env.DB_HOST,
-    database: process.env.DB_DATABASE,
-    password: process.env.DB_PASSWORD,
-    port: process.env.DB_PORT,
-    // Necessario per i servizi cloud come Aiven
-    ssl: { rejectUnauthorized: false } 
-});
+// 2. Definisci pool come null o come un oggetto vuoto per evitare ReferenceError
+const pool = null; 
 
-pool.on('connect', () => {
-    console.log('PostgreSQL: Pool di connessione attiva per eventhub_db.');
-});
-
-pool.on('error', (err) => {
-    console.error('Errore inatteso sulla pool di connessione DB:', err);
-});
-
-// Esporta il metodo di query per usarlo nei controller
-module.exports = {
-    query: (text, params) => pool.query(text, params),
-    pool,
+const connectDB = async () => {
+    try {
+        // Commenta il codice che tenta la connessione
+        // await pool.connect(); 
+        
+        console.log('✅ Avviso: Connessione al DB saltata (PostgreSQL non attivo).');
+        console.log('Il backend NON si bloccherà, ma le query falliranno.');
+        
+    } catch (err) {
+        // Commenta il codice di gestione dell'errore che ferma il processo
+        // console.error('ERRORE: Connessione al database fallita!', err);
+        // process.exit(1); 
+    }
 };
+
+module.exports = { connectDB, pool };
