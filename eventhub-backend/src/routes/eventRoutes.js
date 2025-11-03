@@ -41,6 +41,9 @@ router.delete('/:id/register',
     eventController.unregisterFromEvent
 );
 
+// Rotta per ottenere tutte le categorie
+router.get('/categories', eventController.getCategories);
+
 // Rotta temporanea per aggiungere una categoria
 router.post('/add-category', authMiddleware.protect, authMiddleware.restrictTo(['admin']), eventController.addCategory);
 

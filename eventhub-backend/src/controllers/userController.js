@@ -8,6 +8,7 @@ const saltRounds = 10;
 
 // --- Registrazione Utente (POST /api/users/register) ---
 exports.registerUser = async (req, res) => {
+    console.log('Richiesta di registrazione ricevuta:', req.body);
     const { username, email, password } = req.body; 
 
     if (!username || !email || !password) {

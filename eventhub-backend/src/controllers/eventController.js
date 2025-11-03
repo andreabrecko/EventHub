@@ -6,7 +6,7 @@ const socketManager = require('../utils/socketManager'); // <--- AGGIUNTA PER NO
 // --- B.1 Creazione di eventi (Protetta) ---
 exports.createEvent = async (req, res) => {
     const { id: user_id } = req.user; 
-    const { title, description, date, location, capacity, category_id, image_url } = req.body; 
+    const { title, description, date, location, capacity, category_id, image_url, min_participants, max_participants } = req.body; 
 
     if (!title || !description || !date || !location || !capacity || !category_id) {
         return res.status(400).json({ error: 'Fornire tutti i campi obbligatori per l\'evento.' });
@@ -15,11 +15,11 @@ exports.createEvent = async (req, res) => {
     try {
         // La colonna user_id è il creatore dell'evento, come da schema DB (precedentemente creator_id)
         const query = `
-            INSERT INTO Events (title, description, event_date, location, capacity, category_id, creator_id, image_url)
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+            INSERT INTO Events (title, description, event_date, location, capacity, category_id, creator_id, image_url, min_participants, max_participants)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
             RETURNING *; 
         `;
-        const values = [title, description, date, location, capacity, category_id, user_id, image_url || null];
+        const values = [title, description, date, location, capacity, category_id, user_id, image_url || null, min_participants || null, max_participants || null];
         const result = await pool.query(query, values);
 
         res.status(201).json({
@@ -278,5 +278,15 @@ exports.addCategory = async (req, res) => {
     } catch (err) {
         console.error("Errore nell'aggiungere la categoria:", err);
         res.status(500).json({ error: 'Errore interno del server durante l\'aggiunta della categoria.' });
+    }
+};
+
+exports.getCategories = async (req, res) => {
+    try {
+        const result = await pool.query('SELECT id, name FROM Categories ORDER BY name ASC');
+        res.status(200).json(result.rows);
+    } catch (err) {
+        console.error("Errore nel recupero delle categorie:", err);
+        res.status(500).json({ error: 'Errore interno del server durante il recupero delle categorie.' });
     }
 };

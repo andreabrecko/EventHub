@@ -15,7 +15,9 @@ const mainRouter = require('./routes/index');
 // --- Middleware Globali ---
 app.use(express.json()); // Per parsare i body JSON nelle richieste POST/PUT
 app.use(express.urlencoded({ extended: true }));
-app.use(cors());
+app.use(cors({
+    origin: '*'
+}));
 
 // --- Montaggio Rotte ---
 app.use('/api', mainRouter); // Tutte le rotte inizieranno con /api
