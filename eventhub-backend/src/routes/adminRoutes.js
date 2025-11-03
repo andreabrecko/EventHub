@@ -21,4 +21,7 @@ router.patch('/users/:id/block', adminController.blockUser);
 // Rotta per eliminare un evento (DELETE /api/admin/events/:id)
 router.delete('/events/:id', adminController.deleteEventAdmin);
 
+// Rotta per ottenere tutti gli utenti (GET /api/admin/users)
+router.get('/users', adminController.getAllUsers);
+
 module.exports = router;

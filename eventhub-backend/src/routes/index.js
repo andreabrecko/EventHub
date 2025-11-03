@@ -3,6 +3,12 @@
 const express = require('express');
 const router = express.Router();
 
+// Middleware di logging per tutte le richieste
+router.use((req, res, next) => {
+    console.log(`Richiesta ricevuta: ${req.method} ${req.originalUrl}`);
+    next();
+});
+
 const userRoutes = require('./userRoutes');
 const eventRoutes = require('./eventRoutes');
 const adminRoutes = require('./adminRoutes'); // <--- AGGIUNTA

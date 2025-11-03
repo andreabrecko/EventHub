@@ -22,9 +22,9 @@ app.get('/api/health', (req, res) => {
 // --- 3. AVVIO ASCOLTO ---
 
 // Avvia il server HTTP
-server.listen(PORT, '0.0.0.0', () => {
-    console.log(`Server EventHub (Simplified) in esecuzione sulla porta ${PORT}`);
-});
+// server.listen(PORT, '0.0.0.0', () => {
+//     console.log(`Server EventHub (Simplified) in esecuzione sulla porta ${PORT}`);
+// });
 
 // Gestione delle promesse non gestite (Unhandled Promise Rejections)
 process.on('unhandledRejection', (err, promise) => {
@@ -40,3 +40,16 @@ process.on('uncaughtException', (err, origin) => {
     // Chiudi il server e esci dal processo
     server.close(() => process.exit(1));
 });
+
+const { connectDB, pool } = require('./src/config/db');
+const { seedCategories } = require('./src/controllers/eventController');
+
+const startServer = async () => {
+    await connectDB();
+    await seedCategories(); // Call seedCategories after connecting to DB
+    server.listen(PORT, '0.0.0.0', () => {
+        console.log(`Server EventHub (Simplified) in esecuzione sulla porta ${PORT}`);
+    });
+};
+
+startServer();

@@ -118,3 +118,23 @@ exports.deleteEventAdmin = async (req, res) => {
         res.status(500).json({ error: 'Errore interno del server.' });
     }
 };
+
+// --- D.5 Ottenere tutti gli utenti ---
+exports.getAllUsers = async (req, res) => {
+    try {
+        const query = `
+            SELECT id, username, email, role, is_blocked, created_at
+            FROM Users
+            ORDER BY created_at DESC;
+        `;
+        const result = await db.query(query);
+
+        res.status(200).json({
+            count: result.rows.length,
+            users: result.rows
+        });
+    } catch (err) {
+        console.error("Errore recupero utenti:", err);
+        res.status(500).json({ error: 'Errore interno del server.' });
+    }
+};

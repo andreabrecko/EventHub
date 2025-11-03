@@ -4,7 +4,7 @@ const { pool } = require('../config/db');
 const socketManager = require('../utils/socketManager'); // <--- AGGIUNTA PER NOTIFICHE LIVE
 
 // --- B.1 Creazione di eventi (Protetta) ---
-exports.createEvent = async (req, res) => {
+const createEvent = async (req, res) => {
     const { id: user_id } = req.user; 
     const { title, description, date, location, capacity, category_id, image_url, min_participants, max_participants } = req.body; 
 
@@ -34,7 +34,7 @@ exports.createEvent = async (req, res) => {
 };
 
 // --- B.4 Lista eventi pubblici e filtri ---
-exports.getEvents = async (req, res) => {
+const getEvents = async (req, res) => {
     const { category_id, location, date } = req.query; 
 
     let query = `
@@ -82,7 +82,7 @@ exports.getEvents = async (req, res) => {
 };
 
 // --- B.2 Modifica evento (Protetta e Autorizzata) ---
-exports.updateEvent = async (req, res) => {
+const updateEvent = async (req, res) => {
     const { id: eventId } = req.params;
     const { id: userId } = req.user; 
     const { title, description, event_date, location, capacity, category_id, image_url } = req.body;
@@ -138,7 +138,7 @@ exports.updateEvent = async (req, res) => {
 };
 
 // --- B.3 Cancellazione evento (Protetta e Autorizzata) ---
-exports.deleteEvent = async (req, res) => {
+const deleteEvent = async (req, res) => {
     const { id: eventId } = req.params;
     const { id: userId } = req.user; 
 
@@ -167,7 +167,7 @@ exports.deleteEvent = async (req, res) => {
 };
 
 // --- B.5 Iscrizione a un evento (Protetta) ---
-exports.registerForEvent = async (req, res) => {
+const registerForEvent = async (req, res) => {
     const { id: event_id } = req.params;
     const { id: user_id, username } = req.user; // Otteniamo l'ID e il ruolo/username dal token
 
@@ -226,7 +226,7 @@ exports.registerForEvent = async (req, res) => {
 };
 
 // --- B.5 Annullamento iscrizione (Protetta) ---
-exports.unregisterFromEvent = async (req, res) => {
+const unregisterFromEvent = async (req, res) => {
     const { id: event_id } = req.params;
     const { id: user_id, username } = req.user; 
 
@@ -259,7 +259,7 @@ exports.unregisterFromEvent = async (req, res) => {
 };
 
 // Funzione temporanea per aggiungere una categoria
-exports.addCategory = async (req, res) => {
+const addCategory = async (req, res) => {
     const { name } = req.body;
 
     if (!name) {
@@ -281,7 +281,7 @@ exports.addCategory = async (req, res) => {
     }
 };
 
-exports.getCategories = async (req, res) => {
+const getCategories = async (req, res) => {
     try {
         const result = await pool.query('SELECT id, name FROM Categories ORDER BY name ASC');
         res.status(200).json(result.rows);
@@ -289,4 +289,46 @@ exports.getCategories = async (req, res) => {
         console.error("Errore nel recupero delle categorie:", err);
         res.status(500).json({ error: 'Errore interno del server durante il recupero delle categorie.' });
     }
+};
+
+
+const seedCategories = async () => {
+    console.log('Attempting to seed categories...');
+    try {
+        const client = await pool.connect();
+        console.log('Database client connected for seeding.');
+        const res = await client.query('SELECT COUNT(*) FROM Categories');
+        const categoryCount = parseInt(res.rows[0].count);
+        console.log(`Current category count: ${categoryCount}`);
+
+        if (categoryCount === 0) {
+            console.log('Nessuna categoria trovata. Inserimento categorie predefinite...');
+            const defaultCategories = [
+                'Musica', 'Sport', 'Arte', 'Tecnologia', 'Cibo', 'Educazione', 'Sociale', 'Benessere'
+            ];
+            for (const categoryName of defaultCategories) {
+                await client.query('INSERT INTO Categories (name) VALUES ($1)', [categoryName]);
+                console.log(`Inserted category: ${categoryName}`);
+            }
+            console.log('Categorie predefinite inserite con successo.');
+        } else {
+            console.log('Categorie esistenti trovate. Nessun inserimento necessario.');
+        }
+        client.release();
+        console.log('Database client released after seeding.');
+    } catch (error) {
+        console.error('Errore durante il seeding delle categorie:', error);
+    }
+};
+
+module.exports = {
+    createEvent,
+    getEvents,
+    updateEvent,
+    deleteEvent,
+    registerForEvent,
+    unregisterFromEvent,
+    addCategory,
+    getCategories,
+    seedCategories // Export the new function
 };

@@ -9,6 +9,7 @@
 <body>
     <nav class="navbar">
         <div class="navbar-left">
+            <a href="#" id="admin-button" class="admin-btn">Admin</a> <!-- Admin button added here -->
             <a href="#" id="home-link">EventHub</a>
         </div>
         <div class="navbar-right">
@@ -20,6 +21,7 @@
                 <span id="welcome-message"></span>
                 <button id="logout-button">Logout</button>
                 <button id="create-event-button" style="display: none;">Crea un nuovo evento</button>
+                <button id="admin-button" style="display: none;">Admin</button>
             </div>
         </div>
     </nav>
@@ -69,6 +71,26 @@
                 </select>
                 <button type="submit">Crea Evento</button>
                 <p id="create-event-message"></p>
+            </form>
+        </div>
+
+        <div id="admin-page" class="page" style="display: none;">
+            <h1>Pannello di Amministrazione</h1>
+            <p>Benvenuto nel pannello di amministrazione. Qui potrai gestire utenti, eventi e categorie.</p>
+            <!-- Admin content will go here -->
+        </div>
+    </div>
+
+    <!-- Admin Login Modal -->
+    <div id="admin-login-modal" class="modal">
+        <div class="modal-content">
+            <span class="close-button">&times;</span>
+            <h2>Login Amministratore</h2>
+            <form id="admin-login-form">
+                <input type="email" id="admin-email" placeholder="Email" required>
+                <input type="password" id="admin-password" placeholder="Password" required>
+                <button type="submit">Accedi</button>
+                <p id="admin-login-message"></p>
             </form>
         </div>
     </div>
