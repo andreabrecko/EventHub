@@ -41,4 +41,7 @@ router.delete('/:id/register',
     eventController.unregisterFromEvent
 );
 
+// Rotta temporanea per aggiungere una categoria
+router.post('/add-category', authMiddleware.protect, authMiddleware.restrictTo(['admin']), eventController.addCategory);
+
 module.exports = router;

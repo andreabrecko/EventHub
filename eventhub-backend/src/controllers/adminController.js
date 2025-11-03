@@ -98,3 +98,23 @@ exports.getPendingEvents = async (req, res) => {
         res.status(500).json({ error: 'Errore interno del server.' });
     }
 };
+
+// --- D.4 Cancellazione Evento da Admin ---
+exports.deleteEventAdmin = async (req, res) => {
+    const { id: eventId } = req.params;
+
+    try {
+        const deleteQuery = 'DELETE FROM Events WHERE id = $1 RETURNING id, title';
+        const result = await db.query(deleteQuery, [eventId]);
+
+        if (result.rows.length === 0) {
+            return res.status(404).json({ error: 'Evento non trovato.' });
+        }
+
+        res.status(200).json({ message: `Evento '${result.rows[0].title}' eliminato con successo dall'amministratore.` });
+
+    } catch (err) {
+        console.error("Errore cancellazione evento da admin:", err);
+        res.status(500).json({ error: 'Errore interno del server.' });
+    }
+};

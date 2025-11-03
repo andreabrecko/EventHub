@@ -2,8 +2,7 @@ import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 
-const Register = () => {
-  const [username, setUsername] = useState('');
+const Login = () => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [message, setMessage] = useState('');
@@ -12,25 +11,25 @@ const Register = () => {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    setMessage('Registrazione in corso...');
+    setMessage('Accesso in corso...');
 
     try {
-      const response = await fetch('/api/users/register', {
+      const response = await fetch('/api/users/login', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ username, email, password }),
+        body: JSON.stringify({ email, password }),
       });
 
       const data = await response.json();
 
       if (response.ok) {
-        setMessage('✅ Registrazione riuscita! Ora puoi accedere.');
-        login(data.token, data.user); // Usa la funzione login dal contesto
-        navigate('/'); // Reindirizza alla home page
+        setMessage('✅ Accesso riuscito!');
+        login(data.token, data.user);
+        navigate('/'); // Reindirizza alla home page dopo il login
       } else {
-        setMessage(`❌ Errore di registrazione: ${data.error || 'Errore sconosciuto.'}`);
+        setMessage(`❌ Errore di accesso: ${data.error || 'Errore sconosciuto.'}`);
       }
 
     } catch (error) {
@@ -41,12 +40,8 @@ const Register = () => {
 
   return (
     <div style={{ padding: '20px', maxWidth: '400px', margin: 'auto' }}>
-      <h2>Registrazione Utente</h2>
+      <h2>Accesso Utente</h2>
       <form onSubmit={handleSubmit}>
-        <div>
-          <label>Username:</label>
-          <input type="text" value={username} onChange={(e) => setUsername(e.target.value)} required />
-        </div>
         <div>
           <label>Email:</label>
           <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} required />
@@ -55,11 +50,11 @@ const Register = () => {
           <label>Password:</label>
           <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} required />
         </div>
-        <button type="submit" style={{ marginTop: '10px' }}>Registrati</button>
+        <button type="submit" style={{ marginTop: '10px' }}>Accedi</button>
       </form>
       {message && <p style={{ marginTop: '15px' }}>{message}</p>}
     </div>
   );
 };
 
-export default Register;
+export default Login;

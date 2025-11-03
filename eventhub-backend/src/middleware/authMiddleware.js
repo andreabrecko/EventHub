@@ -21,14 +21,15 @@ exports.protect = (req, res, next) => {
 
     try {
         // 2. Verifica e decodifica il token
+        const token = req.headers.authorization.split(' ')[1];
+        // console.log('Token received in authMiddleware:', token);
         const decoded = jwt.verify(token, process.env.JWT_SECRET);
-        
-        // 3. Aggiunge i dati utente (id, role) alla richiesta
-        req.user = decoded; 
-
-        next(); 
-    } catch (err) {
-        // Token non valido o scaduto
+        // console.log('Decoded token in authMiddleware:', decoded);
+        req.user = decoded;
+        // console.log('req.user set to:', req.user);
+        next();
+    } catch (error) {
+        // console.error('Error in authMiddleware:', error);
         return res.status(401).json({ error: 'Token non valido o scaduto.' });
     }
 };

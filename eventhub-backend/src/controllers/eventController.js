@@ -1,6 +1,6 @@
 // File: src/controllers/eventController.js
 
-const db = require('../config/db');
+const { pool } = require('../config/db');
 const socketManager = require('../utils/socketManager'); // <--- AGGIUNTA PER NOTIFICHE LIVE
 
 // --- B.1 Creazione di eventi (Protetta) ---
@@ -15,12 +15,12 @@ exports.createEvent = async (req, res) => {
     try {
         // La colonna user_id è il creatore dell'evento, come da schema DB (precedentemente creator_id)
         const query = `
-            INSERT INTO Events (title, description, event_date, location, capacity, category_id, user_id, image_url)
+            INSERT INTO Events (title, description, event_date, location, capacity, category_id, creator_id, image_url)
             VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
             RETURNING *; 
         `;
         const values = [title, description, date, location, capacity, category_id, user_id, image_url || null];
-        const result = await db.query(query, values);
+        const result = await pool.query(query, values);
 
         res.status(201).json({
             message: 'Evento creato con successo! In attesa di approvazione admin.',
@@ -68,7 +68,7 @@ exports.getEvents = async (req, res) => {
     query += ` ORDER BY e.event_date ASC`;
 
     try {
-        const result = await db.query(query, params);
+        const result = await pool.query(query, params);
         
         res.status(200).json({
             count: result.rows.length,
@@ -90,7 +90,7 @@ exports.updateEvent = async (req, res) => {
     try {
         // 1. Autorizzazione: verifica che l'utente sia il creatore
         const checkQuery = 'SELECT user_id FROM Events WHERE id = $1';
-        const checkResult = await db.query(checkQuery, [eventId]);
+        const checkResult = await pool.query(checkQuery, [eventId]);
 
         if (checkResult.rows.length === 0) {
             return res.status(404).json({ error: 'Evento non trovato.' });
@@ -124,7 +124,7 @@ exports.updateEvent = async (req, res) => {
         `;
         updateParams.push(eventId); 
 
-        const updateResult = await db.query(updateQuery, updateParams);
+        const updateResult = await pool.query(updateQuery, updateParams);
 
         res.status(200).json({
             message: 'Evento aggiornato con successo!',
@@ -145,7 +145,7 @@ exports.deleteEvent = async (req, res) => {
     try {
         // 1. Autorizzazione: verifica che l'utente sia il creatore
         const checkQuery = 'SELECT user_id FROM Events WHERE id = $1';
-        const checkResult = await db.query(checkQuery, [eventId]);
+        const checkResult = await pool.query(checkQuery, [eventId]);
 
         if (checkResult.rows.length === 0) {
             return res.status(404).json({ error: 'Evento non trovato.' });
@@ -156,7 +156,7 @@ exports.deleteEvent = async (req, res) => {
 
         // 2. Esegue la cancellazione
         const deleteQuery = 'DELETE FROM Events WHERE id = $1 RETURNING id';
-        await db.query(deleteQuery, [eventId]);
+        await pool.query(deleteQuery, [eventId]);
 
         res.status(204).send(); // 204 No Content
 
@@ -173,8 +173,8 @@ exports.registerForEvent = async (req, res) => {
 
     try {
         // 1. Verifica se l'utente è già iscritto
-        const existsQuery = 'SELECT * FROM Registrations WHERE user_id = $1 AND event_id = $2';
-        const existsResult = await db.query(existsQuery, [user_id, event_id]);
+        const existsQuery = 'SELECT 1 FROM Registrations WHERE user_id = $1 AND event_id = $2';
+        const existsResult = await pool.query(existsQuery, [user_id, event_id]);
 
         if (existsResult.rows.length > 0) {
             return res.status(409).json({ error: 'Sei già iscritto a questo evento.' });
@@ -186,7 +186,7 @@ exports.registerForEvent = async (req, res) => {
             FROM Events 
             WHERE id = $1 AND event_date > CURRENT_TIMESTAMP AND is_approved = TRUE
         `;
-        const eventResult = await db.query(eventQuery, [event_id]);
+        const eventResult = await pool.query(eventQuery, [event_id]);
         
         if (eventResult.rows.length === 0) {
             return res.status(404).json({ error: 'Evento non trovato, non approvato o già concluso.' });
@@ -195,7 +195,7 @@ exports.registerForEvent = async (req, res) => {
         
         // 3. Verifica capienza
         const countQuery = 'SELECT COUNT(*) FROM Registrations WHERE event_id = $1';
-        const countResult = await db.query(countQuery, [event_id]);
+        const countResult = await pool.query(countQuery, [event_id]);
         const currentRegistrations = parseInt(countResult.rows[0].count, 10);
 
         if (currentRegistrations >= eventCapacity) {
@@ -204,7 +204,7 @@ exports.registerForEvent = async (req, res) => {
 
         // 4. Inserisci la registrazione
         const insertQuery = 'INSERT INTO Registrations (user_id, event_id) VALUES ($1, $2) RETURNING *';
-        await db.query(insertQuery, [user_id, event_id]);
+        await pool.query(insertQuery, [user_id, event_id]);
 
         res.status(201).json({ message: 'Iscrizione all\'evento avvenuta con successo.' });
 
@@ -232,7 +232,7 @@ exports.unregisterFromEvent = async (req, res) => {
 
     try {
         const deleteQuery = 'DELETE FROM Registrations WHERE user_id = $1 AND event_id = $2 RETURNING *';
-        const result = await db.query(deleteQuery, [user_id, event_id]);
+        const result = await pool.query(deleteQuery, [user_id, event_id]);
 
         if (result.rows.length === 0) {
             return res.status(404).json({ error: 'Nessuna iscrizione trovata per questo utente a questo evento.' });
@@ -255,5 +255,28 @@ exports.unregisterFromEvent = async (req, res) => {
     } catch (err) {
         console.error("Errore annullamento iscrizione:", err);
         res.status(500).json({ error: 'Errore interno del server.' });
+    }
+};
+
+// Funzione temporanea per aggiungere una categoria
+exports.addCategory = async (req, res) => {
+    const { name } = req.body;
+
+    if (!name) {
+        return res.status(400).json({ error: 'Il nome della categoria è obbligatorio.' });
+    }
+
+    try {
+        const query = `
+            INSERT INTO Categories (name)
+            VALUES ($1)
+            RETURNING id, name;
+        `;
+        const result = await pool.query(query, [name]);
+        const newCategory = result.rows[0];
+        res.status(201).json({ message: 'Categoria aggiunta con successo!', category: newCategory });
+    } catch (err) {
+        console.error("Errore nell'aggiungere la categoria:", err);
+        res.status(500).json({ error: 'Errore interno del server durante l\'aggiunta della categoria.' });
     }
 };

@@ -1,6 +1,6 @@
 // File: src/controllers/userController.js
 
-const db = require('../config/db');
+const { pool } = require('../config/db');
 const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
 
@@ -15,6 +15,7 @@ exports.registerUser = async (req, res) => {
     }
 
     try {
+        console.log('Attempting to register user:', username, email);
         // Cifratura della password prima del salvataggio
         const password_hash = await bcrypt.hash(password, saltRounds);
 
@@ -24,7 +25,7 @@ exports.registerUser = async (req, res) => {
             RETURNING id, username, email, role; 
         `;
         
-        const result = await db.query(query, [username, email, password_hash]);
+        const result = await pool.query(query, [username, email, password_hash]);
         const newUser = result.rows[0];
 
         res.status(201).json({
@@ -51,7 +52,7 @@ exports.loginUser = async (req, res) => {
 
     try {
         // 1. Cerca l'utente per email
-        const userResult = await db.query('SELECT * FROM Users WHERE email = $1', [email]);
+        const userResult = await pool.query('SELECT * FROM Users WHERE email = $1', [email]);
         const user = userResult.rows[0];
 
         if (!user) {
@@ -66,13 +67,12 @@ exports.loginUser = async (req, res) => {
         }
 
         // 3. Genera il JWT
-        const token = jwt.sign(
-            { id: user.id, role: user.role },
-            process.env.JWT_SECRET,
-            { expiresIn: process.env.JWT_EXPIRES_IN }
-        );
+        // Genera JWT
+        console.log('JWT_SECRET in userController (signing):', process.env.JWT_SECRET);
+        const token = jwt.sign({ id: user.id, role: user.role }, process.env.JWT_SECRET, { expiresIn: '24h' });
+        // console.log('JWT_SECRET used for signing:', process.env.JWT_SECRET);
+        // console.log('Generated Token:', token);
 
-        // 4. Risposta
         res.status(200).json({
             message: 'Login effettuato con successo!',
             token: token,

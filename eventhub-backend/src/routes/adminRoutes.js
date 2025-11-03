@@ -18,5 +18,7 @@ router.patch('/events/:id/approve', adminController.approveEvent);
 // Rotta per bloccare/sbloccare un utente (PATCH /api/admin/users/:id/block)
 router.patch('/users/:id/block', adminController.blockUser);
 
+// Rotta per eliminare un evento (DELETE /api/admin/events/:id)
+router.delete('/events/:id', adminController.deleteEventAdmin);
 
 module.exports = router;
