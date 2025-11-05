@@ -1,4 +1,5 @@
 // File: server.js
+console.log('Server.js started!');
 
 // Carica subito le variabili d'ambiente dal file .env
 require('dotenv').config();
