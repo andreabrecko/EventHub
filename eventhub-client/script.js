@@ -8,7 +8,11 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const authLinks = document.getElementById('auth-links');
     const userInfo = document.getElementById('user-info');
-    const welcomeMessage = document.getElementById('welcome-message');
+    const welcomeMessage = document.createElement('span');
+    welcomeMessage.id = 'welcome-message';
+    userInfo.prepend(welcomeMessage);
+
+    let currentUser = null;
 
     const homePage = document.getElementById('home-page');
     const registerPage = document.getElementById('register-page');
@@ -34,67 +38,206 @@ document.addEventListener('DOMContentLoaded', () => {
     const adminPasswordInput = document.getElementById('admin-password');
     const adminLoginMessage = document.getElementById('admin-login-message');
 
+    // Admin Dashboard elements
+    const pendingEventsList = document.getElementById('pending-events-list');
+    const approvedEventsList = document.getElementById('approved-events-list');
+    const reportedEventsList = document.getElementById('reported-events-list');
+
     let currentView = 'home';
-    let currentUser = null;
 
-    const API_BASE_URL = 'http://localhost:3000/api';
-
-    function showPage(pageToShow) {
+    // Funzione per mostrare o nascondere le pagine
+    function showPage(page) {
         homePage.style.display = 'none';
         registerPage.style.display = 'none';
         loginPage.style.display = 'none';
         createEventPage.style.display = 'none';
         adminPage.style.display = 'none';
 
-        pageToShow.style.display = 'block';
-        currentView = pageToShow.id.replace('-page', '');
+        page.style.display = 'block';
     }
+
+    const API_BASE_URL = 'http://localhost:3000/api';
+
+    // Test di connettività al backend
+    fetch(`${API_BASE_URL}/health`)
+        .then(response => {
+            if (response.ok) {
+                console.log('Connessione al backend riuscita!');
+            } else {
+                console.error('Connessione al backend fallita:', response.statusText);
+            }
+        })
+        .catch(error => {
+            console.error('Errore di rete durante il test di connettività:', error);
+        });
 
     function updateAuthUI() {
+        console.log('updateAuthUI called. Token:', localStorage.getItem('token') ? 'Present' : 'Absent', 'isAdmin:', localStorage.getItem('role') === 'admin', 'currentUser:', currentUser);
         const token = localStorage.getItem('token');
+        const isAdmin = localStorage.getItem('role') === 'admin';
+    
         if (token) {
-            authLinks.style.display = 'none';
-            userInfo.style.display = 'flex';
-            const username = localStorage.getItem('username');
-            const role = localStorage.getItem('role');
-            welcomeMessage.textContent = `Benvenuto, ${username} (${role})`;
-
-            // Hide the admin button in the navbar-left if logged in
-            adminButton.style.display = 'none';
-
-            if (role === 'admin') {
-                createEventButton.style.display = 'block';
-                // The admin page itself will be shown via the modal login, not this button
-            } else if (role === 'organizer') {
-                createEventButton.style.display = 'block';
-            } else {
-                createEventButton.style.display = 'none';
-            }
+            if (loginLink) loginLink.style.display = 'none';
+            if (registerLink) registerLink.style.display = 'none';
+            logoutButton.style.display = 'block';
+            createEventButton.style.display = isAdmin ? 'none' : 'block';
+            welcomeMessage.textContent = `Benvenuto, ${localStorage.getItem('username')}${isAdmin ? ' (admin)' : ''}`;
+            welcomeMessage.style.display = 'block';
         } else {
-            authLinks.style.display = 'flex';
-            userInfo.style.display = 'none';
+            if (loginLink) loginLink.style.display = 'inline-block';
+            if (registerLink) registerLink.style.display = 'inline-block';
+            logoutButton.style.display = 'none';
             createEventButton.style.display = 'none';
-            // Show the admin button in the navbar-left only if not logged in
-            adminButton.style.display = 'block';
+            welcomeMessage.style.display = 'none';
         }
     }
+
+    // Chiamata iniziale per aggiornare l'interfaccia utente all'avvio
+    updateAuthUI();
 
     async function fetchEvents() {
         try {
-            const response = await fetch(`${API_BASE_URL}/events`);
+            const response = await fetch(`${API_BASE_URL}/events?status=approved`); // Modificato per recuperare solo eventi approvati
             if (!response.ok) {
-                throw new Error('Network response was not ok');
+                const errorData = await response.json();
+                console.error('Errore nel recupero degli eventi:', errorData.message);
+                displayEvents([]); // Passa un array vuoto in caso di errore
+                return;
             }
-            const data = await response.json();
-            displayEvents(data.events);
+            let events = await response.json();
+            
+            // Assicurati che events sia un array
+            if (!Array.isArray(events)) {
+                console.warn('La risposta dell\'API per gli eventi non è un array. Reinizializzazione a un array vuoto.', events);
+                events = [];
+            }
+            displayEvents(events);
         } catch (error) {
-            console.error('Errore nel recupero degli eventi:', error);
-            eventsList.innerHTML = '<p class="error-message">Errore di rete. Impossibile caricare gli eventi.</p>';
+            console.error('Errore di rete durante il recupero degli eventi:', error);
+            displayEvents([]); // Passa un array vuoto in caso di errore di rete
         }
+    }
+
+    function showPage(pageToShow) {
+        homePage.style.display = 'none';
+        registerPage.style.display = 'none';
+        loginPage.style.display = 'none';
+        createEventPage.style.display = 'none';
+        adminPage.style.display = 'none'; // Nascondi adminPage per impostazione predefinita
+
+        pageToShow.style.display = 'block';
+        currentView = pageToShow.id.replace('-page', '');
+
+        if (pageToShow === adminPage) {
+            fetchAdminEvents();
+        }
+    }
+
+    async function fetchAdminEvents() {
+        const token = localStorage.getItem('token');
+        if (!token) {
+            console.error('No token found, cannot fetch admin events.');
+            return;
+        }
+
+        try {
+            const [pendingRes, approvedRes, reportedRes] = await Promise.all([
+                fetch(`${API_BASE_URL}/admin/events/pending`, {
+                    headers: { 'Authorization': `Bearer ${token}` }
+                }),
+                fetch(`${API_BASE_URL}/admin/events/approved`, {
+                    headers: { 'Authorization': `Bearer ${token}` }
+                }),
+                fetch(`${API_BASE_URL}/admin/events/reported`, {
+                    headers: { 'Authorization': `Bearer ${token}` }
+                })
+            ]);
+
+            const pendingEvents = await pendingRes.json();
+            const approvedEvents = await approvedRes.json();
+            const reportedEvents = await reportedRes.json();
+
+            displayAdminEvents(pendingEvents, pendingEventsList, 'pending');
+            displayAdminEvents(approvedEvents, approvedEventsList, 'approved');
+            displayAdminEvents(reportedEvents, reportedEventsList, 'reported');
+
+        } catch (error) {
+            console.error('Errore nel recupero degli eventi admin:', error);
+        }
+    }
+
+    function displayAdminEvents(events, container, type) {
+        container.innerHTML = '';
+        if (events.length === 0) {
+            container.innerHTML = '<p>Nessun evento disponibile.</p>';
+            return;
+        }
+
+        events.forEach(event => {
+            const eventItem = document.createElement('li');
+            eventItem.innerHTML = `
+                <span>${event.title}</span>
+                <div class="actions">
+                    ${type === 'pending' ? `<button data-id="${event._id}" data-action="approve">Approva</button>` : ''}
+                    <button data-id="${event._id}" data-action="delete" class="delete">Elimina</button>
+                </div>
+            `;
+            container.appendChild(eventItem);
+        });
+
+        container.querySelectorAll('button').forEach(button => {
+            button.addEventListener('click', async (e) => {
+                const eventId = e.target.dataset.id;
+                const action = e.target.dataset.action;
+                const token = localStorage.getItem('token');
+
+                if (!token) {
+                    console.error('No token found.');
+                    return;
+                }
+
+                try {
+                    let url = '';
+                    let method = 'PUT';
+
+                    if (action === 'approve') {
+                        url = `${API_BASE_URL}/admin/events/${eventId}/approve`;
+                    } else if (action === 'delete') {
+                        url = `${API_BASE_URL}/admin/events/${eventId}/delete`;
+                        method = 'DELETE';
+                    }
+
+                    const response = await fetch(url, {
+                        method: method,
+                        headers: {
+                            'Authorization': `Bearer ${token}`
+                        }
+                    });
+
+                    if (response.ok) {
+                        alert(`Evento ${action === 'approve' ? 'approvato' : 'eliminato'} con successo!`);
+                        fetchAdminEvents(); // Refresh the lists
+                    } else {
+                        const errorData = await response.json();
+                        alert(`Errore: ${errorData.message}`);
+                    }
+                } catch (error) {
+                    console.error(`Errore durante l'azione ${action} sull'evento:`, error);
+                    alert(`Errore di rete durante l'azione ${action}.`);
+                }
+            });
+        });
     }
 
     function displayEvents(events) {
         eventsList.innerHTML = '';
+        // Aggiungi un controllo per assicurarti che events sia un array
+        if (!Array.isArray(events)) {
+            console.error('displayEvents ha ricevuto dati non validi. Previsto un array.', events);
+            eventsList.innerHTML = '<p>Errore nel caricamento degli eventi.</p>';
+            return;
+        }
+
         if (events.length === 0) {
             eventsList.innerHTML = '<p>Nessun evento disponibile al momento.</p>';
             return;
@@ -242,12 +385,11 @@ document.addEventListener('DOMContentLoaded', () => {
             if (response.ok) {
                 localStorage.setItem('token', data.token);
                 localStorage.setItem('username', data.username);
-                localStorage.setItem('role', data.role);
-                currentUser = { username: data.username, role: data.role };
+                localStorage.setItem('role', data.role); // Aggiunto: Salva il ruolo dell'admin
+                currentUser = { username: data.username, role: data.role }; // Aggiorna currentUser
                 loginMessage.textContent = data.message;
                 loginMessage.className = 'success-message';
                 loginForm.reset();
-                updateAuthUI();
                 setTimeout(() => {
                     showPage(homePage);
                     fetchEvents();
@@ -278,7 +420,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         try {
-            const response = await fetch(`${API_BASE_URL}/auth/login`, {
+            const response = await fetch(`${API_BASE_URL}/users/login`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json'
@@ -291,25 +433,29 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (data.role === 'admin') {
                     localStorage.setItem('token', data.token);
                     localStorage.setItem('username', data.username);
-                    localStorage.setItem('role', data.role);
-                    currentUser = { username: data.username, role: data.role };
-                    adminLoginMessage.textContent = data.message;
+                    localStorage.setItem('isAdmin', 'true');
+                    localStorage.setItem('role', data.role); // Aggiunto: Salva il ruolo dell'admin
+                    currentUser = { username: data.username, role: data.role }; // Aggiorna currentUser
+                    adminLoginMessage.textContent = 'Login effettuato con successo!';
                     adminLoginMessage.className = 'success-message';
                     adminLoginForm.reset();
-                    updateAuthUI();
-                    adminLoginModal.style.display = 'none'; // Hide modal on successful admin login
-                    showPage(adminPage); // Show admin page
-                    adminLoginMessage.textContent = '';
+                    setTimeout(() => {
+                        adminLoginModal.style.display = 'none';
+                        adminLoginMessage.textContent = '';
+                        updateAuthUI();
+                        showPage(adminPage);
+                        fetchAdminEvents();
+                    }, 1000); // Mostra il messaggio per 1 secondo
                 } else {
                     adminLoginMessage.textContent = 'Accesso negato: non sei un amministratore.';
                     adminLoginMessage.className = 'error-message';
                 }
             } else {
-                adminLoginMessage.textContent = data.message;
+                adminLoginMessage.textContent = data.message || 'Credenziali non valide.';
                 adminLoginMessage.className = 'error-message';
             }
         } catch (error) {
-            console.error('Errore durante il login amministratore:', error);
+            console.error('Errore durante il login admin:', error);
             adminLoginMessage.textContent = 'Errore di rete. Impossibile connettersi al server.';
             adminLoginMessage.className = 'error-message';
         }
@@ -342,7 +488,8 @@ document.addEventListener('DOMContentLoaded', () => {
                     capacity: parseInt(capacity),
                     minParticipants: minParticipants ? parseInt(minParticipants) : undefined,
                     maxParticipants: maxParticipants ? parseInt(maxParticipants) : undefined,
-                    category
+                    category,
+                    status: 'pending' // Imposta lo stato iniziale come 'pending'
                 })
             });
             const data = await response.json();
@@ -369,4 +516,18 @@ document.addEventListener('DOMContentLoaded', () => {
     // Initial load
     updateAuthUI();
     fetchEvents();
+
+    const token = localStorage.getItem('token');
+    const isAdmin = localStorage.getItem('isAdmin') === 'true';
+
+    if (token) {
+        if (isAdmin) {
+            showPage(adminPage);
+            fetchAdminEvents();
+        } else {
+            showPage(homePage);
+        }
+    } else {
+        showPage(homePage);
+    }
 });
