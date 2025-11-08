@@ -1,16 +1,22 @@
-# React + Vite
+# EventHub Client (Vanilla JS)
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+Interfaccia web semplice per EventHub sviluppata in HTML/CSS/JavaScript vanilla.
 
-Currently, two official plugins are available:
+## Funzionalità
+- Autenticazione (registrazione/login) con JWT.
+- Visualizzazione eventi approvati con ricerca testuale.
+- Creazione evento con upload foto e selezione categoria.
+- Dashboard amministratore: approva/rifiuta/elimina eventi, blocca/sblocca utenti.
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Babel](https://babeljs.io/) (or [oxc](https://oxc.rs) when used in [rolldown-vite](https://vite.dev/guide/rolldown)) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
+## Avvio
+1. Avvia il backend: `cd ../eventhub-backend && npm start` (oppure `npm run dev` se hai `nodemon`).
+2. Avvia il client: `npx --yes serve -l 5173` nella cartella `eventhub-client`.
+3. Apri `http://localhost:5173/`.
 
-## React Compiler
+## Configurazione
+- Il backend usa variabili `.env` (vedi `eventhub-backend/.env.example`).
+- L’API base è `http://localhost:3000/api` (configurata in `script.js`).
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
-
-## Expanding the ESLint configuration
-
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.
+## Note
+- Il client mostra un messaggio se non ci sono categorie disponibili.
+- La ricerca eventi è ottimizzata con debounce.

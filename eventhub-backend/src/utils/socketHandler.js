@@ -1,6 +1,6 @@
 // File: src/utils/socketHandler.js
 
-const db = require('../config/db');
+const { pool } = require('../config/db');
 
 module.exports = (io) => {
     io.on('connection', (socket) => {
@@ -25,7 +25,7 @@ module.exports = (io) => {
             try {
                 // 1. Salva il messaggio nel DB (Tabella ChatMessages)
                 const query = 'INSERT INTO ChatMessages (event_id, sender_id, message_text) VALUES ($1, $2, $3) RETURNING sent_at';
-                const result = await db.query(query, [eventId, userId, message]);
+                const result = await pool.query(query, [eventId, userId, message]);
                 
                 // 2. Prepara e invia il messaggio in tempo reale
                 const messageData = { 

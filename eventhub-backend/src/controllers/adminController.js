@@ -1,6 +1,6 @@
 // File: src/controllers/adminController.js
 
-const db = require('../config/db');
+const { pool } = require('../config/db');
 
 // --- D.1 Gestione Eventi (Approva/Rifiuta) ---
 exports.approveEvent = async (req, res) => {
@@ -18,7 +18,7 @@ exports.approveEvent = async (req, res) => {
             WHERE id = $2
             RETURNING id, title, is_approved;
         `;
-        const result = await db.query(query, [isApproved, eventId]);
+        const result = await pool.query(query, [isApproved, eventId]);
 
         if (result.rows.length === 0) {
             return res.status(404).json({ error: 'Evento non trovato.' });
@@ -59,7 +59,7 @@ exports.blockUser = async (req, res) => {
             WHERE id = $2 AND role != 'admin' -- Prevenzione: non bloccare gli admin
             RETURNING id, username, role, is_blocked;
         `;
-        const result = await db.query(query, [isBlocked, userId]);
+        const result = await pool.query(query, [isBlocked, userId]);
 
         if (result.rows.length === 0) {
             return res.status(404).json({ error: 'Utente non trovato o Utente è un Admin.' });
@@ -81,13 +81,21 @@ exports.blockUser = async (req, res) => {
 exports.getPendingEvents = async (req, res) => {
     try {
         const query = `
-            SELECT e.*, u.username as creator_username
+            SELECT 
+                e.*, 
+                u.username as creator_username,
+                COALESCE(p.photos, '[]') AS photos
             FROM Events e
             JOIN Users u ON e.user_id = u.id
+            LEFT JOIN LATERAL (
+                SELECT json_agg(ep.file_path) AS photos
+                FROM EventPhotos ep
+                WHERE ep.event_id = e.id
+            ) p ON TRUE
             WHERE e.is_approved = FALSE
             ORDER BY e.created_at ASC;
         `;
-        const result = await db.query(query);
+        const result = await pool.query(query);
 
         res.status(200).json({
             count: result.rows.length,
@@ -105,7 +113,7 @@ exports.deleteEventAdmin = async (req, res) => {
 
     try {
         const deleteQuery = 'DELETE FROM Events WHERE id = $1 RETURNING id, title';
-        const result = await db.query(deleteQuery, [eventId]);
+        const result = await pool.query(deleteQuery, [eventId]);
 
         if (result.rows.length === 0) {
             return res.status(404).json({ error: 'Evento non trovato.' });
@@ -127,7 +135,7 @@ exports.getAllUsers = async (req, res) => {
             FROM Users
             ORDER BY created_at DESC;
         `;
-        const result = await db.query(query);
+        const result = await pool.query(query);
 
         res.status(200).json({
             count: result.rows.length,

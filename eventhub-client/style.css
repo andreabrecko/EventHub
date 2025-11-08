@@ -334,3 +334,37 @@ form button:hover {
 .event-list li .actions button:hover {
     opacity: 0.8;
 }
+
+/* --- Admin Utenti: lista e badge --- */
+.user-list {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+}
+.user-list li {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0.5em 0;
+    border-bottom: 1px solid #3a3a5a;
+}
+.badge {
+    display: inline-block;
+    padding: 0.15em 0.5em;
+    border-radius: 999px;
+    font-size: 0.75em;
+    margin-left: 6px;
+}
+.badge.blocked {
+    background-color: #b00020;
+    color: #ffffff;
+}
+.admin-users-filters input[type="text"] {
+    background-color: #1a1a2e;
+    color: #e0e0e0;
+    border: 1px solid #800080;
+    border-radius: 5px;
+}
+.admin-users-filters label {
+    color: #e0e0e0;
+}

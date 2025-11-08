@@ -4,10 +4,13 @@ const express = require('express');
 const router = express.Router();
 const adminController = require('../controllers/adminController');
 const authMiddleware = require('../middleware/authMiddleware'); 
+const rateLimiter = require('../middleware/rateLimiter');
 
 // Tutti gli endpoint admin DEVONO essere protetti e ristretti al ruolo 'admin'
 router.use(authMiddleware.protect);
 router.use(authMiddleware.restrictTo('admin'));
+// Limite: max 50 richieste ogni 5 minuti per gli endpoint admin
+router.use(rateLimiter({ windowMs: 5 * 60 * 1000, max: 50 }));
 
 // Rotta per ottenere eventi in attesa di approvazione
 router.get('/events/pending', adminController.getPendingEvents);

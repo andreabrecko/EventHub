@@ -7,6 +7,8 @@ require('dotenv').config();
 const express = require('express');
 const app = require('./src/app'); // Importa l'app configurata da src/app.js
 const http = require('http'); // Modulo standard per creare un server HTTP
+const { Server } = require('socket.io');
+const socketManager = require('./src/utils/socketManager');
 
 const PORT = process.env.PORT || 3000;
 
@@ -14,6 +16,20 @@ const PORT = process.env.PORT || 3000;
 
 // Crea un server HTTP dal tuo server Express
 const server = http.createServer(app);
+// Inizializza Socket.IO e condividi l'istanza globalmente
+const io = new Server(server, {
+    cors: {
+        origin: '*'
+    }
+});
+socketManager.setIoInstance(io);
+// Se disponibile, collega i listener di socket
+try {
+    const attachSockets = require('./src/utils/socketHandler');
+    attachSockets(io);
+} catch (e) {
+    console.warn('Socket handler non caricato:', e?.message || e);
+}
 
 // Rotta di test semplice
 app.get('/api/health', (req, res) => {

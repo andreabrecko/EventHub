@@ -6,25 +6,50 @@ const socketManager = require('../utils/socketManager'); // <--- AGGIUNTA PER NO
 // --- B.1 Creazione di eventi (Protetta) ---
 const createEvent = async (req, res) => {
     const { id: user_id } = req.user; 
-    const { title, description, date, location, capacity, category_id, image_url, min_participants, max_participants } = req.body; 
+    const { title, description, date, location, capacity, category_id, min_participants, max_participants } = req.body; 
 
     if (!title || !description || !date || !location || !capacity || !category_id) {
         return res.status(400).json({ error: 'Fornire tutti i campi obbligatori per l\'evento.' });
     }
 
     try {
-        // La colonna user_id è il creatore dell'evento, come da schema DB (precedentemente creator_id)
-        const query = `
-            INSERT INTO Events (title, description, event_date, location, capacity, category_id, creator_id, image_url, min_participants, max_participants)
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+        // 1) Crea l'evento (user_id è il creatore). Imposta is_approved = FALSE
+        const insertEventQuery = `
+            INSERT INTO Events (title, description, event_date, location, capacity, category_id, user_id, min_participants, max_participants, is_approved)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, FALSE)
             RETURNING *; 
         `;
-        const values = [title, description, date, location, capacity, category_id, user_id, image_url || null, min_participants || null, max_participants || null];
-        const result = await pool.query(query, values);
+        const insertEventValues = [title, description, date, location, capacity, category_id, user_id, min_participants || null, max_participants || null];
+        const eventResult = await pool.query(insertEventQuery, insertEventValues);
+        const newEvent = eventResult.rows[0];
+
+        // 2) Assicurati che la tabella EventPhotos esista
+        await pool.query(`
+            CREATE TABLE IF NOT EXISTS EventPhotos (
+                id SERIAL PRIMARY KEY,
+                event_id INTEGER REFERENCES Events(id) ON DELETE CASCADE,
+                file_path TEXT NOT NULL,
+                created_at TIMESTAMP DEFAULT NOW()
+            );
+        `);
+
+        // 3) Se sono presenti file caricati, salva i percorsi nella tabella EventPhotos
+        if (Array.isArray(req.files) && req.files.length > 0) {
+            const insertPhotoQuery = `
+                INSERT INTO EventPhotos (event_id, file_path)
+                VALUES ($1, $2)
+                RETURNING id;
+            `;
+            for (const file of req.files) {
+                // I file sono serviti via /uploads; salviamo il path pubblico
+                const publicPath = `/uploads/events/${file.filename}`;
+                await pool.query(insertPhotoQuery, [newEvent.id, publicPath]);
+            }
+        }
 
         res.status(201).json({
             message: 'Evento creato con successo! In attesa di approvazione admin.',
-            event: result.rows[0]
+            event: newEvent
         });
 
     } catch (err) {
@@ -42,10 +67,16 @@ const getEvents = async (req, res) => {
             e.*, 
             u.username as creator_username, 
             c.name as category_name,
-            (SELECT COUNT(*) FROM Registrations r WHERE r.event_id = e.id) as current_registrations
+            (SELECT COUNT(*) FROM Registrations r WHERE r.event_id = e.id) as current_registrations,
+            COALESCE(p.photos, '[]') AS photos
         FROM Events e
         JOIN Users u ON e.user_id = u.id
         LEFT JOIN Categories c ON e.category_id = c.id
+        LEFT JOIN LATERAL (
+            SELECT json_agg(ep.file_path) AS photos
+            FROM EventPhotos ep
+            WHERE ep.event_id = e.id
+        ) p ON TRUE
         WHERE e.is_approved = TRUE -- Mostra solo eventi approvati (Macro D)
     `;
     const params = [];
@@ -118,7 +149,7 @@ const updateEvent = async (req, res) => {
 
         const updateQuery = `
             UPDATE Events
-            SET ${setClauses.join(', ')}, created_at = NOW() -- Usiamo created_at come timestamp di modifica
+            SET ${setClauses.join(', ')}
             WHERE id = $${paramIndex++}
             RETURNING *;
         `;

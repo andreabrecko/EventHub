@@ -9,7 +9,6 @@
 <body>
     <nav class="navbar">
         <div class="navbar-left">
-            <a href="#" id="admin-button" class="admin-btn">Admin</a> <!-- Admin button added here -->
             <a href="#" id="home-link">EventHub</a>
         </div>
         <div class="navbar-right">
@@ -19,8 +18,8 @@
             </div>
             <div id="user-info" style="display: none;">
                 <button id="logout-button">Logout</button>
+                <button id="admin-dashboard-button" style="display: none;">Pannello Admin</button>
                 <button id="create-event-button" style="display: none;">Crea un nuovo evento</button>
-                <button id="admin-button" style="display: none;">Admin</button>
             </div>
         </div>
     </nav>
@@ -29,6 +28,9 @@
         <div id="home-page" class="page">
             <h1>Home Page</h1>
             <p>Welcome to the EventHub!</p>
+            <div class="events-filters" style="display:flex; gap:12px; align-items:center; margin:8px 0 16px;">
+                <input type="text" id="events-search" placeholder="Cerca eventi (titolo, descrizione, luogo, categoria)" style="flex:1; padding:0.5em;">
+            </div>
             <div id="events-list" class="event-grid"></div>
         </div>
 
@@ -61,13 +63,14 @@
                 <input type="date" id="event-date" required>
                 <input type="time" id="event-time" required>
                 <input type="text" id="event-location" placeholder="Luogo" required>
-                <input type="url" id="event-image-url" placeholder="URL Immagine (opzionale)">
                 <input type="number" id="event-capacity" placeholder="Capacità Massima" required min="1">
                 <input type="number" id="event-min-participants" placeholder="Partecipanti Minimi (opzionale)" min="0">
                 <input type="number" id="event-max-participants" placeholder="Partecipanti Massimi (opzionale)" min="0">
                 <select id="event-category" required>
                     <option value="">Seleziona una categoria</option>
                 </select>
+                <label for="event-photos">Foto evento (puoi selezionare più immagini):</label>
+                <input type="file" id="event-photos" accept="image/*" multiple>
                 <button type="submit">Crea Evento</button>
                 <p id="create-event-message"></p>
             </form>
@@ -75,6 +78,7 @@
 
         <div id="admin-page" class="page" style="display: none;">
             <h1>Pannello di Amministrazione</h1>
+            <button id="back-to-home-button" style="margin-bottom: 20px;">Torna alla Home</button>
             <p>Benvenuto nel pannello di amministrazione. Qui potrai gestire utenti, eventi e categorie.</p>
             <div class="admin-dashboard">
                 <div class="admin-column">
@@ -90,20 +94,17 @@
                     <div id="reported-events-list" class="event-list"></div>
                 </div>
             </div>
-        </div>
-    </div>
-
-    <!-- Admin Login Modal -->
-    <div id="admin-login-modal" class="modal">
-        <div class="modal-content">
-            <span class="close-button">&times;</span>
-            <h2>Login Amministratore</h2>
-            <form id="admin-login-form">
-                <input type="email" id="admin-email" placeholder="Email" required>
-                <input type="password" id="admin-password" placeholder="Password" required>
-                <button type="submit">Accedi</button>
-                <p id="admin-login-message"></p>
-            </form>
+            <div class="admin-users" style="margin-top: 24px;">
+                <h2>Utenti</h2>
+                <div class="admin-users-filters" style="display:flex; gap:12px; align-items:center; margin:8px 0 16px;">
+                    <input type="text" id="users-search" placeholder="Cerca per username o email" style="flex:1; padding:0.5em;">
+                    <label style="display:flex; align-items:center; gap:6px; cursor:pointer;">
+                        <input type="checkbox" id="users-show-blocked">
+                        Mostra solo bloccati
+                    </label>
+                </div>
+                <ul id="users-list" class="user-list"></ul>
+            </div>
         </div>
     </div>
 

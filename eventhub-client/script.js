@@ -4,7 +4,8 @@ document.addEventListener('DOMContentLoaded', () => {
     const loginLink = document.getElementById('login-link');
     const logoutButton = document.getElementById('logout-button');
     const createEventButton = document.getElementById('create-event-button');
-    const adminButton = document.getElementById('admin-button'); // This is the new admin button in navbar-left
+    const adminDashboardButton = document.getElementById('admin-dashboard-button'); // Bottone per admin dashboard
+    const backToHomeButton = document.getElementById('back-to-home-button'); // Bottone per tornare alla home
 
     const authLinks = document.getElementById('auth-links');
     const userInfo = document.getElementById('user-info');
@@ -28,20 +29,21 @@ document.addEventListener('DOMContentLoaded', () => {
     const loginMessage = document.getElementById('login-message');
     const createEventMessage = document.getElementById('create-event-message');
     const eventsList = document.getElementById('events-list');
+    const eventsSearch = document.getElementById('events-search');
+    let homeEventsCache = [];
     const eventCategorySelect = document.getElementById('event-category');
 
-    // Admin Login Modal elements
-    const adminLoginModal = document.getElementById('admin-login-modal');
-    const closeButton = adminLoginModal.querySelector('.close-button');
-    const adminLoginForm = document.getElementById('admin-login-form');
-    const adminEmailInput = document.getElementById('admin-email');
-    const adminPasswordInput = document.getElementById('admin-password');
-    const adminLoginMessage = document.getElementById('admin-login-message');
+    // Admin elements (solo per admin dashboard)
+    const adminButton = document.getElementById('admin-button'); // Riferimento per eventuale uso futuro
 
     // Admin Dashboard elements
     const pendingEventsList = document.getElementById('pending-events-list');
     const approvedEventsList = document.getElementById('approved-events-list');
     const reportedEventsList = document.getElementById('reported-events-list');
+    const usersList = document.getElementById('users-list');
+    const usersSearch = document.getElementById('users-search');
+    const usersShowBlocked = document.getElementById('users-show-blocked');
+    let adminUsersCache = [];
 
     let currentView = 'home';
 
@@ -72,22 +74,24 @@ document.addEventListener('DOMContentLoaded', () => {
         });
 
     function updateAuthUI() {
-        console.log('updateAuthUI called. Token:', localStorage.getItem('token') ? 'Present' : 'Absent', 'isAdmin:', localStorage.getItem('role') === 'admin', 'currentUser:', currentUser);
+        console.log('updateAuthUI called. Token:', localStorage.getItem('token') ? 'Present' : 'Absent', 'role:', localStorage.getItem('role'), 'currentUser:', currentUser);
         const token = localStorage.getItem('token');
-        const isAdmin = localStorage.getItem('role') === 'admin';
+        const userRole = localStorage.getItem('role');
     
         if (token) {
             if (loginLink) loginLink.style.display = 'none';
             if (registerLink) registerLink.style.display = 'none';
             logoutButton.style.display = 'block';
-            createEventButton.style.display = isAdmin ? 'none' : 'block';
-            welcomeMessage.textContent = `Benvenuto, ${localStorage.getItem('username')}${isAdmin ? ' (admin)' : ''}`;
+            createEventButton.style.display = userRole === 'admin' ? 'none' : 'block';
+            adminDashboardButton.style.display = userRole === 'admin' ? 'block' : 'none';
+            welcomeMessage.textContent = `Benvenuto, ${localStorage.getItem('username')}${userRole === 'admin' ? ' (admin)' : ''}`;
             welcomeMessage.style.display = 'block';
         } else {
             if (loginLink) loginLink.style.display = 'inline-block';
             if (registerLink) registerLink.style.display = 'inline-block';
             logoutButton.style.display = 'none';
             createEventButton.style.display = 'none';
+            adminDashboardButton.style.display = 'none';
             welcomeMessage.style.display = 'none';
         }
     }
@@ -97,25 +101,48 @@ document.addEventListener('DOMContentLoaded', () => {
 
     async function fetchEvents() {
         try {
-            const response = await fetch(`${API_BASE_URL}/events?status=approved`); // Modificato per recuperare solo eventi approvati
+            const response = await fetch(`${API_BASE_URL}/events`);
             if (!response.ok) {
-                const errorData = await response.json();
-                console.error('Errore nel recupero degli eventi:', errorData.message);
-                displayEvents([]); // Passa un array vuoto in caso di errore
+                const errorData = await response.json().catch(() => ({}));
+                console.error('Errore nel recupero degli eventi:', errorData.message || response.statusText);
+                homeEventsCache = [];
+                applyEventsFilter();
                 return;
             }
-            let events = await response.json();
-            
-            // Assicurati che events sia un array
-            if (!Array.isArray(events)) {
-                console.warn('La risposta dell\'API per gli eventi non è un array. Reinizializzazione a un array vuoto.', events);
-                events = [];
+            const payload = await response.json();
+            let events = Array.isArray(payload) ? payload : (Array.isArray(payload.events) ? payload.events : []);
+
+            // Mostra sempre in home solo eventi approvati di altri utenti
+            const currentUserIdStr = localStorage.getItem('userId');
+            if (currentUserIdStr) {
+                const currentUserId = parseInt(currentUserIdStr, 10);
+                if (!Number.isNaN(currentUserId)) {
+                    events = events.filter(ev => ev.user_id !== currentUserId);
+                }
             }
-            displayEvents(events);
+
+            homeEventsCache = events;
+            applyEventsFilter();
         } catch (error) {
             console.error('Errore di rete durante il recupero degli eventi:', error);
-            displayEvents([]); // Passa un array vuoto in caso di errore di rete
+            homeEventsCache = [];
+            applyEventsFilter();
         }
+    }
+
+    function applyEventsFilter() {
+        let filtered = Array.isArray(homeEventsCache) ? [...homeEventsCache] : [];
+        const q = (eventsSearch && eventsSearch.value ? eventsSearch.value : '').trim().toLowerCase();
+        if (q) {
+            filtered = filtered.filter(ev => {
+                const title = String(ev.title || '').toLowerCase();
+                const desc = String(ev.description || '').toLowerCase();
+                const loc = String(ev.location || '').toLowerCase();
+                const cat = String(ev.category_name || '').toLowerCase();
+                return title.includes(q) || desc.includes(q) || loc.includes(q) || cat.includes(q);
+            });
+        }
+        displayEvents(filtered);
     }
 
     function showPage(pageToShow) {
@@ -130,6 +157,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         if (pageToShow === adminPage) {
             fetchAdminEvents();
+            fetchAdminUsers();
         }
     }
 
@@ -141,29 +169,126 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         try {
-            const [pendingRes, approvedRes, reportedRes] = await Promise.all([
-                fetch(`${API_BASE_URL}/admin/events/pending`, {
-                    headers: { 'Authorization': `Bearer ${token}` }
-                }),
-                fetch(`${API_BASE_URL}/admin/events/approved`, {
-                    headers: { 'Authorization': `Bearer ${token}` }
-                }),
-                fetch(`${API_BASE_URL}/admin/events/reported`, {
-                    headers: { 'Authorization': `Bearer ${token}` }
-                })
-            ]);
-
-            const pendingEvents = await pendingRes.json();
-            const approvedEvents = await approvedRes.json();
-            const reportedEvents = await reportedRes.json();
-
+            const pendingRes = await fetch(`${API_BASE_URL}/admin/events/pending`, {
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+            const pendingPayload = await pendingRes.json();
+            const pendingEvents = Array.isArray(pendingPayload) ? pendingPayload : (Array.isArray(pendingPayload.events) ? pendingPayload.events : []);
             displayAdminEvents(pendingEvents, pendingEventsList, 'pending');
-            displayAdminEvents(approvedEvents, approvedEventsList, 'approved');
-            displayAdminEvents(reportedEvents, reportedEventsList, 'reported');
+            approvedEventsList.innerHTML = '<p>Integrazione in corso.</p>';
+            reportedEventsList.innerHTML = '<p>Integrazione in corso.</p>';
 
         } catch (error) {
             console.error('Errore nel recupero degli eventi admin:', error);
         }
+    }
+
+    async function fetchAdminUsers() {
+        const token = localStorage.getItem('token');
+        if (!token) {
+            console.error('No token found, cannot fetch admin users.');
+            return;
+        }
+        try {
+            const res = await fetch(`${API_BASE_URL}/admin/users`, {
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+            const payload = await res.json();
+            const users = Array.isArray(payload) ? payload : (Array.isArray(payload.users) ? payload.users : []);
+            adminUsersCache = users;
+            applyUsersFilter();
+        } catch (error) {
+            console.error('Errore nel recupero degli utenti admin:', error);
+        }
+    }
+
+    function applyUsersFilter() {
+        let filtered = Array.isArray(adminUsersCache) ? [...adminUsersCache] : [];
+        const query = (usersSearch && usersSearch.value ? usersSearch.value : '').trim().toLowerCase();
+        const onlyBlocked = !!(usersShowBlocked && usersShowBlocked.checked);
+
+        if (onlyBlocked) {
+            filtered = filtered.filter(u => !!u.is_blocked);
+        }
+        if (query) {
+            filtered = filtered.filter(u => {
+                const uname = String(u.username || '').toLowerCase();
+                const email = String(u.email || '').toLowerCase();
+                return uname.includes(query) || email.includes(query);
+            });
+        }
+        displayUsers(filtered);
+    }
+
+    function displayUsers(users) {
+        usersList.innerHTML = '';
+        if (!Array.isArray(users) || users.length === 0) {
+            usersList.innerHTML = '<li>Nessun utente trovato.</li>';
+            return;
+        }
+        users.forEach(u => {
+            const li = document.createElement('li');
+            const blocked = !!u.is_blocked;
+            const isAdmin = u.role === 'admin';
+            li.innerHTML = `
+                <span>${u.username} — ${u.email} (${u.role}) ${blocked ? '<span class="badge blocked">Bloccato</span>' : ''}</span>
+                <div class="actions" style="margin-left: 8px;">
+                    <button data-id="${u.id}" data-action="${blocked ? 'unblock' : 'block'}" ${isAdmin ? 'disabled' : ''}>
+                        ${blocked ? 'Sblocca' : 'Blocca'}
+                    </button>
+                </div>
+            `;
+            usersList.appendChild(li);
+        });
+
+        usersList.querySelectorAll('button').forEach(btn => {
+            btn.addEventListener('click', async (e) => {
+                const userId = e.target.dataset.id;
+                const action = e.target.dataset.action;
+                const token = localStorage.getItem('token');
+                if (!token) return;
+                try {
+                    const res = await fetch(`${API_BASE_URL}/admin/users/${userId}/block`, {
+                        method: 'PATCH',
+                        headers: {
+                            'Authorization': `Bearer ${token}`,
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify({ isBlocked: action === 'block' })
+                    });
+                    const data = await res.json();
+                    if (res.ok) {
+                        alert(data.message || 'Operazione completata.');
+                        fetchAdminUsers();
+                    } else {
+                        alert(data.error || data.message || 'Operazione non riuscita.');
+                    }
+                } catch (err) {
+                    console.error('Errore blocco/sblocco utente:', err);
+                    alert('Errore di rete durante il blocco/sblocco utente.');
+                }
+            });
+        });
+    }
+
+    if (usersSearch) {
+        usersSearch.addEventListener('input', applyUsersFilter);
+    }
+    if (usersShowBlocked) {
+        usersShowBlocked.addEventListener('change', applyUsersFilter);
+    }
+
+    // --- Validazioni lato client per Register ---
+    function isValidEmail(email) {
+        const re = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/i;
+        return re.test(String(email));
+    }
+    function isUsernameAllowed(username) {
+        const normalized = String(username || '').toLowerCase();
+        const badWords = ['cazzo','merda','stronzo','puttana','vaffanculo'];
+        if (normalized.length < 3 || normalized.length > 20) return false;
+        if (!/^[a-z0-9_]+$/i.test(username)) return false;
+        return !badWords.some(w => normalized.includes(w));
     }
 
     function displayAdminEvents(events, container, type) {
@@ -178,8 +303,11 @@ document.addEventListener('DOMContentLoaded', () => {
             eventItem.innerHTML = `
                 <span>${event.title}</span>
                 <div class="actions">
-                    ${type === 'pending' ? `<button data-id="${event._id}" data-action="approve">Approva</button>` : ''}
-                    <button data-id="${event._id}" data-action="delete" class="delete">Elimina</button>
+                    ${type === 'pending' ? `
+                        <button data-id="${event.id}" data-action="approve">Accetta</button>
+                        <button data-id="${event.id}" data-action="reject" class="reject">Rifiuta</button>
+                    ` : ''}
+                    <button data-id="${event.id}" data-action="delete" class="delete">Elimina</button>
                 </div>
             `;
             container.appendChild(eventItem);
@@ -198,28 +326,33 @@ document.addEventListener('DOMContentLoaded', () => {
 
                 try {
                     let url = '';
-                    let method = 'PUT';
+                    let method = 'GET';
+                    let headers = { 'Authorization': `Bearer ${token}` };
+                    let body = undefined;
 
-                    if (action === 'approve') {
+                    if (action === 'approve' || action === 'reject') {
                         url = `${API_BASE_URL}/admin/events/${eventId}/approve`;
+                        method = 'PATCH';
+                        headers['Content-Type'] = 'application/json';
+                        body = JSON.stringify({ isApproved: action === 'approve' });
                     } else if (action === 'delete') {
-                        url = `${API_BASE_URL}/admin/events/${eventId}/delete`;
+                        url = `${API_BASE_URL}/admin/events/${eventId}`;
                         method = 'DELETE';
                     }
 
                     const response = await fetch(url, {
-                        method: method,
-                        headers: {
-                            'Authorization': `Bearer ${token}`
-                        }
+                        method,
+                        headers,
+                        body
                     });
 
                     if (response.ok) {
-                        alert(`Evento ${action === 'approve' ? 'approvato' : 'eliminato'} con successo!`);
+                        const okMsg = action === 'approve' ? 'Evento approvato con successo!' : (action === 'reject' ? 'Evento rifiutato con successo!' : 'Evento eliminato con successo!');
+                        alert(okMsg);
                         fetchAdminEvents(); // Refresh the lists
                     } else {
                         const errorData = await response.json();
-                        alert(`Errore: ${errorData.message}`);
+                        alert(`Errore: ${errorData.error || errorData.message || 'Azione non riuscita.'}`);
                     }
                 } catch (error) {
                     console.error(`Errore durante l'azione ${action} sull'evento:`, error);
@@ -245,23 +378,54 @@ document.addEventListener('DOMContentLoaded', () => {
         events.forEach(event => {
             const eventCard = document.createElement('div');
             eventCard.className = 'event-card';
+
+            const photos = Array.isArray(event.photos) && event.photos.length > 0 ? event.photos : [
+                'https://via.placeholder.com/600x300?text=Evento'
+            ];
+
+            const carouselId = `carousel-${event.id}`;
+            const dateStr = event.event_date ? new Date(event.event_date).toLocaleString() : '';
+            const categoryName = event.category_name || 'N/A';
+
             eventCard.innerHTML = `
-                <img src="${event.imageUrl || 'https://via.placeholder.com/150'}" alt="${event.title}">
+                <div class="carousel" id="${carouselId}">
+                    <button class="prev">‹</button>
+                    <div class="slides">
+                        ${photos.map((url, idx) => `<img class="slide${idx === 0 ? ' active' : ''}" src="${url}" alt="${event.title} - foto ${idx+1}">`).join('')}
+                    </div>
+                    <button class="next">›</button>
+                </div>
                 <div class="event-card-content">
                     <h3>${event.title}</h3>
-                    <p class="event-date-time">${new Date(event.date).toLocaleDateString()} ${event.time}</p>
-                    <p class="event-location">${event.location}</p>
-                    <p>${event.description}</p>
-                    <p class="event-category">Categoria: ${event.category ? event.category.name : 'N/A'}</p>
+                    <p class="event-date-time">${dateStr}</p>
+                    <p class="event-location">${event.location || ''}</p>
+                    <p>${event.description || ''}</p>
+                    <p class="event-category">Categoria: ${categoryName}</p>
                 </div>
             `;
             eventsList.appendChild(eventCard);
+
+            // Carosello handlers
+            const carousel = eventCard.querySelector(`#${carouselId}`);
+            const slides = carousel.querySelectorAll('.slide');
+            let currentIndex = 0;
+            const showSlide = (i) => {
+                slides.forEach((img, idx) => img.classList.toggle('active', idx === i));
+            };
+            carousel.querySelector('.prev').addEventListener('click', () => {
+                currentIndex = (currentIndex - 1 + slides.length) % slides.length;
+                showSlide(currentIndex);
+            });
+            carousel.querySelector('.next').addEventListener('click', () => {
+                currentIndex = (currentIndex + 1) % slides.length;
+                showSlide(currentIndex);
+            });
         });
     }
 
     async function fetchCategories() {
         try {
-            const response = await fetch(`${API_BASE_URL}/categories`);
+            const response = await fetch(`${API_BASE_URL}/events/categories`);
             if (!response.ok) {
                 throw new Error('Network response was not ok');
             }
@@ -269,12 +433,21 @@ document.addEventListener('DOMContentLoaded', () => {
             eventCategorySelect.innerHTML = '<option value="">Seleziona una categoria</option>';
             categories.forEach(category => {
                 const option = document.createElement('option');
-                option.value = category._id;
+                option.value = category.id;
                 option.textContent = category.name;
                 eventCategorySelect.appendChild(option);
             });
+            if (!Array.isArray(categories) || categories.length === 0) {
+                createEventMessage.textContent = 'Nessuna categoria disponibile. Contatta un amministratore.';
+                createEventMessage.className = 'error-message';
+            } else {
+                createEventMessage.textContent = '';
+                createEventMessage.className = '';
+            }
         } catch (error) {
             console.error('Errore nel recupero delle categorie:', error);
+            createEventMessage.textContent = 'Impossibile recuperare le categorie al momento.';
+            createEventMessage.className = 'error-message';
         }
     }
 
@@ -300,11 +473,24 @@ document.addEventListener('DOMContentLoaded', () => {
         localStorage.removeItem('token');
         localStorage.removeItem('username');
         localStorage.removeItem('role');
+        localStorage.removeItem('userId');
         currentUser = null;
         updateAuthUI();
         showPage(homePage);
         fetchEvents();
     });
+
+    // Debounce per la ricerca eventi
+    let eventsSearchDebounceTimer = null;
+    function onEventsSearchInput() {
+        if (eventsSearchDebounceTimer) clearTimeout(eventsSearchDebounceTimer);
+        eventsSearchDebounceTimer = setTimeout(() => {
+            applyEventsFilter();
+        }, 250);
+    }
+    if (eventsSearch) {
+        eventsSearch.addEventListener('input', onEventsSearchInput);
+    }
 
     createEventButton.addEventListener('click', (e) => {
         e.preventDefault();
@@ -312,26 +498,16 @@ document.addEventListener('DOMContentLoaded', () => {
         fetchCategories();
     });
 
-    // Admin button click to show modal
-    adminButton.addEventListener('click', (e) => {
+    adminDashboardButton.addEventListener('click', (e) => {
         e.preventDefault();
-        adminLoginModal.style.display = 'flex'; // Show the modal
+        showPage(adminPage);
+        fetchAdminEvents();
     });
 
-    // Close modal button
-    closeButton.addEventListener('click', () => {
-        adminLoginModal.style.display = 'none';
-        adminLoginForm.reset();
-        adminLoginMessage.textContent = '';
-    });
-
-    // Close modal if clicked outside
-    window.addEventListener('click', (e) => {
-        if (e.target === adminLoginModal) {
-            adminLoginModal.style.display = 'none';
-            adminLoginForm.reset();
-            adminLoginMessage.textContent = '';
-        }
+    backToHomeButton.addEventListener('click', (e) => {
+        e.preventDefault();
+        showPage(homePage);
+        fetchEvents();
     });
 
     registerForm.addEventListener('submit', async (e) => {
@@ -341,6 +517,16 @@ document.addEventListener('DOMContentLoaded', () => {
         const password = document.getElementById('register-password').value;
 
         try {
+            if (!isValidEmail(email)) {
+                registerMessage.textContent = 'Email non valida.';
+                registerMessage.className = 'error-message';
+                return;
+            }
+            if (!isUsernameAllowed(username)) {
+                registerMessage.textContent = 'Username non consentito. Scegli un nome appropriato.';
+                registerMessage.className = 'error-message';
+                return;
+            }
             const response = await fetch(`${API_BASE_URL}/users/register`, {
                 method: 'POST',
                 headers: {
@@ -384,19 +570,36 @@ document.addEventListener('DOMContentLoaded', () => {
             const data = await response.json();
             if (response.ok) {
                 localStorage.setItem('token', data.token);
-                localStorage.setItem('username', data.username);
-                localStorage.setItem('role', data.role); // Aggiunto: Salva il ruolo dell'admin
-                currentUser = { username: data.username, role: data.role }; // Aggiorna currentUser
-                loginMessage.textContent = data.message;
+                localStorage.setItem('username', data.user?.username || '');
+                localStorage.setItem('role', data.user?.role || 'user');
+                if (data.user?.id !== undefined && data.user?.id !== null) {
+                    localStorage.setItem('userId', String(data.user.id));
+                } else {
+                    localStorage.removeItem('userId');
+                }
+                currentUser = { username: data.user?.username || '', role: data.user?.role || 'user' };
+                loginMessage.textContent = data.message || 'Login effettuato con successo!';
                 loginMessage.className = 'success-message';
                 loginForm.reset();
                 setTimeout(() => {
-                    showPage(homePage);
-                    fetchEvents();
+                    // Se è admin, vai direttamente al pannello admin
+                    if ((data.user?.role || localStorage.getItem('role')) === 'admin') {
+                        showPage(adminPage);
+                        fetchAdminEvents();
+                    } else {
+                        // Altrimenti vai alla home standard
+                        showPage(homePage);
+                        fetchEvents();
+                    }
                     loginMessage.textContent = '';
                 }, 2000);
             } else {
-                loginMessage.textContent = data.message;
+                // Messaggio specifico richiesto quando utente non è registrato
+                if (response.status === 401 && (data.error === 'Credenziali non valide.' || data.message === 'Credenziali non valide.')) {
+                    loginMessage.textContent = 'Utente non registrato. Per favore procedi con la registrazione.';
+                } else {
+                    loginMessage.textContent = data.error || data.message || 'Credenziali non valide.';
+                }
                 loginMessage.className = 'error-message';
             }
         } catch (error) {
@@ -406,60 +609,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
-    // Admin login form submission
-    adminLoginForm.addEventListener('submit', async (e) => {
-        e.preventDefault();
-        const email = adminEmailInput.value;
-        const password = adminPasswordInput.value;
 
-        // Basic email format validation
-        if (!/^[\w-]+(?:\.[\w-]+)*@(?:[\w-]+\.)+[a-zA-Z]{2,7}$/.test(email)) {
-            adminLoginMessage.textContent = 'Formato email non valido.';
-            adminLoginMessage.className = 'error-message';
-            return;
-        }
-
-        try {
-            const response = await fetch(`${API_BASE_URL}/users/login`, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify({ email, password })
-            });
-            const data = await response.json();
-
-            if (response.ok) {
-                if (data.role === 'admin') {
-                    localStorage.setItem('token', data.token);
-                    localStorage.setItem('username', data.username);
-                    localStorage.setItem('isAdmin', 'true');
-                    localStorage.setItem('role', data.role); // Aggiunto: Salva il ruolo dell'admin
-                    currentUser = { username: data.username, role: data.role }; // Aggiorna currentUser
-                    adminLoginMessage.textContent = 'Login effettuato con successo!';
-                    adminLoginMessage.className = 'success-message';
-                    adminLoginForm.reset();
-                    setTimeout(() => {
-                        adminLoginModal.style.display = 'none';
-                        adminLoginMessage.textContent = '';
-                        updateAuthUI();
-                        showPage(adminPage);
-                        fetchAdminEvents();
-                    }, 1000); // Mostra il messaggio per 1 secondo
-                } else {
-                    adminLoginMessage.textContent = 'Accesso negato: non sei un amministratore.';
-                    adminLoginMessage.className = 'error-message';
-                }
-            } else {
-                adminLoginMessage.textContent = data.message || 'Credenziali non valide.';
-                adminLoginMessage.className = 'error-message';
-            }
-        } catch (error) {
-            console.error('Errore durante il login admin:', error);
-            adminLoginMessage.textContent = 'Errore di rete. Impossibile connettersi al server.';
-            adminLoginMessage.className = 'error-message';
-        }
-    });
 
     createEventForm.addEventListener('submit', async (e) => {
         e.preventDefault();
@@ -468,29 +618,52 @@ document.addEventListener('DOMContentLoaded', () => {
         const date = document.getElementById('event-date').value;
         const time = document.getElementById('event-time').value;
         const location = document.getElementById('event-location').value;
-        const imageUrl = document.getElementById('event-image-url').value;
         const capacity = document.getElementById('event-capacity').value;
         const minParticipants = document.getElementById('event-min-participants').value;
         const maxParticipants = document.getElementById('event-max-participants').value;
         const category = eventCategorySelect.value;
+        const photosInput = document.getElementById('event-photos');
+        const files = photosInput.files;
 
         const token = localStorage.getItem('token');
 
         try {
+            // Validazione lato client
+            if (!title || !description || !date || !time || !location || !capacity || !category) {
+                createEventMessage.textContent = 'Compila tutti i campi obbligatori.';
+                createEventMessage.className = 'error-message';
+                return;
+            }
+            if (files && files.length > 0) {
+                for (const f of files) {
+                    if (!f.type || !f.type.startsWith('image/')) {
+                        createEventMessage.textContent = 'Sono consentite solo immagini.';
+                        createEventMessage.className = 'error-message';
+                        return;
+                    }
+                }
+            }
+
+            const formData = new FormData();
+            formData.append('title', title);
+            formData.append('description', description);
+            // Combina data+ora in formato ISO-like
+            formData.append('date', `${date}T${time}`);
+            formData.append('location', location);
+            formData.append('capacity', parseInt(capacity));
+            if (minParticipants) formData.append('min_participants', parseInt(minParticipants));
+            if (maxParticipants) formData.append('max_participants', parseInt(maxParticipants));
+            formData.append('category_id', parseInt(category));
+            if (files && files.length > 0) {
+                Array.from(files).forEach(file => formData.append('photos', file));
+            }
+
             const response = await fetch(`${API_BASE_URL}/events`, {
                 method: 'POST',
                 headers: {
-                    'Content-Type': 'application/json',
                     'Authorization': `Bearer ${token}`
                 },
-                body: JSON.stringify({
-                    title, description, date, time, location, imageUrl,
-                    capacity: parseInt(capacity),
-                    minParticipants: minParticipants ? parseInt(minParticipants) : undefined,
-                    maxParticipants: maxParticipants ? parseInt(maxParticipants) : undefined,
-                    category,
-                    status: 'pending' // Imposta lo stato iniziale come 'pending'
-                })
+                body: formData
             });
             const data = await response.json();
             if (response.ok) {
@@ -503,7 +676,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     createEventMessage.textContent = '';
                 }, 2000);
             } else {
-                createEventMessage.textContent = data.message;
+                createEventMessage.textContent = data.error || data.message || 'Errore nella creazione dell\'evento.';
                 createEventMessage.className = 'error-message';
             }
         } catch (error) {
@@ -518,10 +691,10 @@ document.addEventListener('DOMContentLoaded', () => {
     fetchEvents();
 
     const token = localStorage.getItem('token');
-    const isAdmin = localStorage.getItem('isAdmin') === 'true';
+    const userRole = localStorage.getItem('role');
 
     if (token) {
-        if (isAdmin) {
+        if (userRole === 'admin') {
             showPage(adminPage);
             fetchAdminEvents();
         } else {

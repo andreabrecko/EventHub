@@ -5,6 +5,14 @@ const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
 
 const saltRounds = 10; 
+const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/i;
+const isUsernameAllowed = (username) => {
+    const normalized = String(username || '').toLowerCase();
+    const badWords = ['cazzo','merda','stronzo','puttana','vaffanculo'];
+    if (normalized.length < 3 || normalized.length > 20) return false;
+    if (!/^[a-z0-9_]+$/i.test(username)) return false;
+    return !badWords.some(w => normalized.includes(w));
+};
 
 // --- Registrazione Utente (POST /api/users/register) ---
 exports.registerUser = async (req, res) => {
@@ -13,6 +21,13 @@ exports.registerUser = async (req, res) => {
 
     if (!username || !email || !password) {
         return res.status(400).json({ error: 'Fornire tutti i campi.' });
+    }
+
+    if (!emailRegex.test(String(email))) {
+        return res.status(400).json({ error: 'Email non valida.' });
+    }
+    if (!isUsernameAllowed(username)) {
+        return res.status(400).json({ error: 'Username non consentito.' });
     }
 
     try {
@@ -61,7 +76,7 @@ exports.loginUser = async (req, res) => {
 
         if (!user) {
             console.log('User not found for email:', email);
-            return res.status(401).json({ error: 'Credenziali non valide.' });
+            return res.status(404).json({ error: 'Utente non registrato. Per favore procedi con la registrazione.' });
         }
 
         // 2. Confronta la password cifrata

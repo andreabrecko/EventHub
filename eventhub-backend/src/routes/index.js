@@ -3,9 +3,11 @@
 const express = require('express');
 const router = express.Router();
 
-// Middleware di logging per tutte le richieste
+// Middleware di logging per tutte le richieste (solo in non-produzione)
 router.use((req, res, next) => {
-    console.log(`Richiesta ricevuta: ${req.method} ${req.originalUrl}`);
+    if (process.env.NODE_ENV !== 'production') {
+        console.log(`Richiesta ricevuta: ${req.method} ${req.originalUrl}`);
+    }
     next();
 });
 
