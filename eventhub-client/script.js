@@ -60,6 +60,29 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const API_BASE_URL = 'http://localhost:3000/api';
 
+    // Parse token da callback OAuth o verifica email
+    (function handleCallbackParams() {
+        try {
+            const url = new URL(window.location.href);
+            const token = url.searchParams.get('token');
+            const username = url.searchParams.get('username');
+            const role = url.searchParams.get('role');
+            const emailVerified = url.searchParams.get('emailVerified');
+            if (token) {
+                localStorage.setItem('token', token);
+                if (username) localStorage.setItem('username', username);
+                if (role) localStorage.setItem('role', role);
+                // Pulisci la query string
+                window.history.replaceState({}, document.title, window.location.pathname);
+            } else if (emailVerified === '1') {
+                alert('Email verificata con successo! Ora puoi accedere.');
+                window.history.replaceState({}, document.title, window.location.pathname);
+            }
+        } catch (e) {
+            console.warn('Impossibile parsare i parametri di callback:', e);
+        }
+    })();
+
     // Test di connettività al backend
     fetch(`${API_BASE_URL}/health`)
         .then(response => {

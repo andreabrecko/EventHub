@@ -8,6 +8,7 @@ const authMiddleware = require('../middleware/authMiddleware');
 // Rotte pubbliche
 router.post('/register', userController.registerUser);
 router.post('/login', userController.loginUser); 
+router.get('/verify-email', userController.verifyEmail);
 
 // Rotta protetta (per testare il token)
 router.get('/me', 

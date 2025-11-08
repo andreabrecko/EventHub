@@ -6,6 +6,9 @@ console.log('app.js initialized'); // Aggiunto per il debug
 const cors = require('cors');
 const path = require('path');
 const errorHandler = require('./utils/errorHandler');
+const passport = require('passport');
+const { configurePassport } = require('./config/passport');
+const oauthRoutes = require('./routes/oauthRoutes');
 
 // Attiva la connessione al DB importando il file (la pool si avvia)
 const { connectDB, pool } = require('./config/db'); 
@@ -20,12 +23,15 @@ app.use(express.urlencoded({ extended: true }));
 app.use(cors({
     origin: '*'
 }));
+app.use(passport.initialize());
+configurePassport();
 
 // Servire staticamente i file caricati (foto eventi)
 app.use('/uploads', express.static(path.join(__dirname, '..', 'uploads')));
 
 // --- Montaggio Rotte ---
 app.use('/api', mainRouter); // Tutte le rotte inizieranno con /api
+app.use('/api/auth', oauthRoutes);
 
 // Endpoint di test salute server
 app.get('/api/health', (req, res) => {

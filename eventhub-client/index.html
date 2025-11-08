@@ -43,6 +43,7 @@
                 <button type="submit">Registrati</button>
                 <p id="register-message"></p>
             </form>
+            <p class="hint">Dopo la registrazione riceverai un’email di conferma.</p>
         </div>
 
         <div id="login-page" class="page" style="display: none;">
@@ -53,6 +54,10 @@
                 <button type="submit">Accedi</button>
                 <p id="login-message"></p>
             </form>
+            <div style="margin-top:12px; display:flex; gap:8px;">
+                <button onclick="window.location.href='http://localhost:3000/api/auth/google'">Accedi con Google</button>
+                <button onclick="window.location.href='http://localhost:3000/api/auth/github'">Accedi con GitHub</button>
+            </div>
         </div>
 
         <div id="create-event-page" class="page" style="display: none;">

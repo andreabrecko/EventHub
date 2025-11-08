@@ -15,6 +15,9 @@ const isUsernameAllowed = (username) => {
 };
 
 // --- Registrazione Utente (POST /api/users/register) ---
+const crypto = require('crypto');
+const { sendVerificationEmail } = require('../services/emailService');
+
 exports.registerUser = async (req, res) => {
     console.log('Richiesta di registrazione ricevuta:', req.body);
     const { username, email, password } = req.body; 
@@ -40,12 +43,26 @@ exports.registerUser = async (req, res) => {
             VALUES ($1, $2, $3)
             RETURNING id, username, email, role; 
         `;
-        
         const result = await pool.query(query, [username, email, password_hash]);
         const newUser = result.rows[0];
 
+        // Genera token di verifica email e scadenza (24h)
+        const token = crypto.randomBytes(32).toString('hex');
+        const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
+        await pool.query(
+            'UPDATE Users SET verification_token = $1, verification_token_expires = $2 WHERE id = $3',
+            [token, expiresAt, newUser.id]
+        );
+
+        // Invio email di verifica
+        try {
+            await sendVerificationEmail({ to: newUser.email, token });
+        } catch (mailErr) {
+            console.error('Errore invio email di verifica:', mailErr);
+        }
+
         res.status(201).json({
-            message: 'Registrazione completata con successo!',
+            message: 'Registrazione completata! Controlla la tua email per confermare.',
             user: { id: newUser.id, username: newUser.username, role: newUser.role }
         });
 
@@ -106,5 +123,37 @@ exports.loginUser = async (req, res) => {
     } catch (err) {
         console.error("Errore login:", err);
         res.status(500).json({ error: 'Errore interno del server durante il login.' });
+    }
+};
+
+// --- Verifica email (GET /api/users/verify-email?token=...) ---
+exports.verifyEmail = async (req, res) => {
+    const { token } = req.query;
+    if (!token) {
+        return res.status(400).json({ error: 'Token di verifica mancante.' });
+    }
+    try {
+        const result = await pool.query(
+            'SELECT id, verification_token_expires FROM Users WHERE verification_token = $1',
+            [token]
+        );
+        const user = result.rows[0];
+        if (!user) {
+            return res.status(400).json({ error: 'Token non valido.' });
+        }
+        if (user.verification_token_expires && new Date(user.verification_token_expires) < new Date()) {
+            return res.status(400).json({ error: 'Token scaduto. Richiedi una nuova verifica.' });
+        }
+        await pool.query(
+            'UPDATE Users SET email_verified = TRUE, verification_token = NULL, verification_token_expires = NULL WHERE id = $1',
+            [user.id]
+        );
+        const frontend = process.env.FRONTEND_URL || 'http://localhost:5173';
+        const url = new URL(frontend);
+        url.searchParams.set('emailVerified', '1');
+        return res.redirect(url.toString());
+    } catch (err) {
+        console.error('Errore verifica email:', err);
+        res.status(500).json({ error: 'Errore interno durante la verifica email.' });
     }
 };
