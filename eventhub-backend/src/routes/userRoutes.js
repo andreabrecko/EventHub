@@ -9,6 +9,7 @@ const authMiddleware = require('../middleware/authMiddleware');
 router.post('/register', userController.registerUser);
 router.post('/login', userController.loginUser); 
 router.get('/verify-email', userController.verifyEmail);
+router.post('/resend-verification', userController.resendVerificationEmail);
 
 // Rotta protetta (per testare il token)
 router.get('/me', 

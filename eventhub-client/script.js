@@ -47,6 +47,22 @@ document.addEventListener('DOMContentLoaded', () => {
 
     let currentView = 'home';
 
+    // Toast notifications
+    const toastRoot = document.createElement('div');
+    toastRoot.className = 'toast-container';
+    document.body.appendChild(toastRoot);
+    function showToast(message, type = 'success', durationMs = 3000) {
+        const el = document.createElement('div');
+        const cls = type === 'warn' ? 'warning' : type;
+        el.className = `toast ${cls}`;
+        el.textContent = String(message || '');
+        toastRoot.appendChild(el);
+        setTimeout(() => {
+            if (el && el.parentNode) el.parentNode.removeChild(el);
+        }, Math.max(1500, durationMs));
+        return el;
+    }
+
     // Funzione per mostrare o nascondere le pagine
     function showPage(page) {
         homePage.style.display = 'none';
@@ -58,7 +74,91 @@ document.addEventListener('DOMContentLoaded', () => {
         page.style.display = 'block';
     }
 
-    const API_BASE_URL = 'http://localhost:3000/api';
+    const API_BASE_URL = (window.location.protocol === 'file:'
+        ? 'http://localhost:3000/api'
+        : `${window.location.origin}/api`);
+
+    // --- Wrapper API con timeout, retry e header uniformi ---
+    const DEFAULT_TIMEOUT_MS = 8000;
+    const DEFAULT_RETRY_GET = 2;
+    const RETRYABLE_STATUS = new Set([500, 502, 503, 504]);
+
+    function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+    function buildUrl(path) {
+        if (!path) return API_BASE_URL;
+        if (/^https?:\/\//i.test(path)) return path;
+        return `${API_BASE_URL}${path.startsWith('/') ? '' : '/'}${path}`;
+    }
+
+    function getAuthHeader() {
+        const token = localStorage.getItem('token');
+        return token ? { Authorization: `Bearer ${token}` } : {};
+    }
+
+    async function safeJson(response) {
+        try { return await response.json(); } catch { return {}; }
+    }
+
+    async function apiRequest(path, {
+        method = 'GET',
+        headers = {},
+        body,
+        useAuth = false,
+        timeoutMs = DEFAULT_TIMEOUT_MS,
+        retry = (method === 'GET' ? DEFAULT_RETRY_GET : 0),
+    } = {}) {
+        const url = buildUrl(path);
+        const finalHeaders = { Accept: 'application/json', ...headers };
+        const isFormData = typeof FormData !== 'undefined' && body instanceof FormData;
+        if (body && !isFormData && !finalHeaders['Content-Type']) {
+            finalHeaders['Content-Type'] = 'application/json';
+        }
+        if (useAuth) Object.assign(finalHeaders, getAuthHeader());
+
+        let attempt = 0;
+        let lastError = null;
+        while (attempt <= retry) {
+            const controller = new AbortController();
+            const timer = setTimeout(() => controller.abort(), Math.max(1000, timeoutMs));
+            try {
+                const response = await fetch(url, {
+                    method,
+                    headers: finalHeaders,
+                    body: isFormData ? body : (body ? (typeof body === 'string' ? body : JSON.stringify(body)) : undefined),
+                    signal: controller.signal,
+                });
+                clearTimeout(timer);
+                if (response.ok) {
+                    if (response.status === 204) return { ok: true, status: 204 };
+                    const data = await safeJson(response);
+                    return data;
+                }
+                if (RETRYABLE_STATUS.has(response.status) && attempt < retry) {
+                    attempt++;
+                    await sleep(300 * attempt);
+                    continue;
+                }
+                const errData = await safeJson(response);
+                const err = new Error(errData.error || errData.message || response.statusText || 'Errore richiesta API');
+                err.status = response.status;
+                err.data = errData;
+                throw err;
+            } catch (err) {
+                clearTimeout(timer);
+                lastError = err;
+                const isAbort = err && (err.name === 'AbortError' || /aborted/i.test(String(err.message)));
+                const isNetwork = err && (err instanceof TypeError || /NetworkError|Failed to fetch/i.test(String(err.message)));
+                if ((isAbort || isNetwork) && attempt < retry) {
+                    attempt++;
+                    await sleep(300 * attempt);
+                    continue;
+                }
+                throw err;
+            }
+        }
+        throw lastError || new Error('Errore sconosciuto nella chiamata API');
+    }
 
     // Parse token da callback OAuth o verifica email
     (function handleCallbackParams() {
@@ -75,7 +175,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 // Pulisci la query string
                 window.history.replaceState({}, document.title, window.location.pathname);
             } else if (emailVerified === '1') {
-                alert('Email verificata con successo! Ora puoi accedere.');
+                showToast('Email verificata con successo! Ora puoi accedere.', 'success');
                 window.history.replaceState({}, document.title, window.location.pathname);
             }
         } catch (e) {
@@ -84,16 +184,12 @@ document.addEventListener('DOMContentLoaded', () => {
     })();
 
     // Test di connettività al backend
-    fetch(`${API_BASE_URL}/health`)
-        .then(response => {
-            if (response.ok) {
-                console.log('Connessione al backend riuscita!');
-            } else {
-                console.error('Connessione al backend fallita:', response.statusText);
-            }
+    apiRequest('/health', { timeoutMs: 2500, retry: 1 })
+        .then(() => {
+            console.log('Connessione al backend riuscita!');
         })
         .catch(error => {
-            console.error('Errore di rete durante il test di connettività:', error);
+            console.error('Connessione al backend fallita:', error.message || error);
         });
 
     function updateAuthUI() {
@@ -102,6 +198,9 @@ document.addEventListener('DOMContentLoaded', () => {
         const userRole = localStorage.getItem('role');
     
         if (token) {
+            // Nascondi i link di autenticazione e mostra l'area utente
+            if (authLinks) authLinks.style.display = 'none';
+            if (userInfo) userInfo.style.display = 'block';
             if (loginLink) loginLink.style.display = 'none';
             if (registerLink) registerLink.style.display = 'none';
             logoutButton.style.display = 'block';
@@ -110,6 +209,9 @@ document.addEventListener('DOMContentLoaded', () => {
             welcomeMessage.textContent = `Benvenuto, ${localStorage.getItem('username')}${userRole === 'admin' ? ' (admin)' : ''}`;
             welcomeMessage.style.display = 'block';
         } else {
+            // Mostra i link di autenticazione e nascondi l'area utente
+            if (authLinks) authLinks.style.display = 'block';
+            if (userInfo) userInfo.style.display = 'none';
             if (loginLink) loginLink.style.display = 'inline-block';
             if (registerLink) registerLink.style.display = 'inline-block';
             logoutButton.style.display = 'none';
@@ -122,17 +224,47 @@ document.addEventListener('DOMContentLoaded', () => {
     // Chiamata iniziale per aggiornare l'interfaccia utente all'avvio
     updateAuthUI();
 
+    // Socket.IO client initialisation and admin listeners
+    let socket;
+    try {
+        if (typeof io !== 'undefined') {
+            socket = io();
+            socket.on('connect', () => {
+                console.log('Socket connesso');
+            });
+            socket.on('connect_error', (err) => {
+                console.warn('Errore connessione socket:', err && (err.message || err));
+            });
+        }
+    } catch (e) {
+        console.warn('Socket.IO non disponibile:', e && (e.message || e));
+    }
+
+    (function initAdminSocketListeners() {
+        const role = localStorage.getItem('role');
+        if (!socket || role !== 'admin') return;
+        const refresh = () => { try { fetchAdminEvents(); } catch {} };
+        socket.on('event_created', (payload = {}) => {
+            showToast(`Nuovo evento da revisionare: ${payload.title || ''}`.trim(), 'warn');
+            refresh();
+        });
+        socket.on('event_approved', (payload = {}) => {
+            showToast(`Evento approvato: ${payload.title || ''}`.trim(), 'success');
+            refresh();
+        });
+        socket.on('event_rejected', (payload = {}) => {
+            showToast(`Evento rifiutato: ${payload.title || ''}`.trim(), 'warn');
+            refresh();
+        });
+        socket.on('event_deleted', (payload = {}) => {
+            showToast(`Evento eliminato: ${payload.title || ''}`.trim(), 'warn');
+            refresh();
+        });
+    })();
+
     async function fetchEvents() {
         try {
-            const response = await fetch(`${API_BASE_URL}/events`);
-            if (!response.ok) {
-                const errorData = await response.json().catch(() => ({}));
-                console.error('Errore nel recupero degli eventi:', errorData.message || response.statusText);
-                homeEventsCache = [];
-                applyEventsFilter();
-                return;
-            }
-            const payload = await response.json();
+            const payload = await apiRequest('/events', { timeoutMs: 6000, retry: 2 });
             let events = Array.isArray(payload) ? payload : (Array.isArray(payload.events) ? payload.events : []);
 
             // Mostra sempre in home solo eventi approvati di altri utenti
@@ -147,7 +279,7 @@ document.addEventListener('DOMContentLoaded', () => {
             homeEventsCache = events;
             applyEventsFilter();
         } catch (error) {
-            console.error('Errore di rete durante il recupero degli eventi:', error);
+            console.error('Errore di rete durante il recupero degli eventi:', error.message || error);
             homeEventsCache = [];
             applyEventsFilter();
         }
@@ -192,17 +324,14 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         try {
-            const pendingRes = await fetch(`${API_BASE_URL}/admin/events/pending`, {
-                headers: { 'Authorization': `Bearer ${token}` }
-            });
-            const pendingPayload = await pendingRes.json();
+            const pendingPayload = await apiRequest('/admin/events/pending', { useAuth: true, timeoutMs: 6000, retry: 1 });
             const pendingEvents = Array.isArray(pendingPayload) ? pendingPayload : (Array.isArray(pendingPayload.events) ? pendingPayload.events : []);
             displayAdminEvents(pendingEvents, pendingEventsList, 'pending');
             approvedEventsList.innerHTML = '<p>Integrazione in corso.</p>';
             reportedEventsList.innerHTML = '<p>Integrazione in corso.</p>';
 
         } catch (error) {
-            console.error('Errore nel recupero degli eventi admin:', error);
+            console.error('Errore nel recupero degli eventi admin:', error.message || error);
         }
     }
 
@@ -213,15 +342,12 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
         try {
-            const res = await fetch(`${API_BASE_URL}/admin/users`, {
-                headers: { 'Authorization': `Bearer ${token}` }
-            });
-            const payload = await res.json();
+            const payload = await apiRequest('/admin/users', { useAuth: true, timeoutMs: 6000, retry: 1 });
             const users = Array.isArray(payload) ? payload : (Array.isArray(payload.users) ? payload.users : []);
             adminUsersCache = users;
             applyUsersFilter();
         } catch (error) {
-            console.error('Errore nel recupero degli utenti admin:', error);
+            console.error('Errore nel recupero degli utenti admin:', error.message || error);
         }
     }
 
@@ -271,24 +397,22 @@ document.addEventListener('DOMContentLoaded', () => {
                 const token = localStorage.getItem('token');
                 if (!token) return;
                 try {
-                    const res = await fetch(`${API_BASE_URL}/admin/users/${userId}/block`, {
+                    const data = await apiRequest(`/admin/users/${userId}/block`, {
                         method: 'PATCH',
-                        headers: {
-                            'Authorization': `Bearer ${token}`,
-                            'Content-Type': 'application/json'
-                        },
-                        body: JSON.stringify({ isBlocked: action === 'block' })
+                        useAuth: true,
+                        timeoutMs: 6000,
+                        retry: 0,
+                        body: { isBlocked: action === 'block' }
                     });
-                    const data = await res.json();
-                    if (res.ok) {
-                        alert(data.message || 'Operazione completata.');
+                    if (!data.status || (data.status && data.status < 400)) {
+                        showToast(data.message || 'Operazione completata.', 'success');
                         fetchAdminUsers();
                     } else {
-                        alert(data.error || data.message || 'Operazione non riuscita.');
+                        showToast(data.error || data.message || 'Operazione non riuscita.', 'error');
                     }
                 } catch (err) {
-                    console.error('Errore blocco/sblocco utente:', err);
-                    alert('Errore di rete durante il blocco/sblocco utente.');
+                    console.error('Errore blocco/sblocco utente:', err.message || err);
+                    showToast('Errore di rete durante il blocco/sblocco utente.', 'error');
                 }
             });
         });
@@ -305,6 +429,10 @@ document.addEventListener('DOMContentLoaded', () => {
     function isValidEmail(email) {
         const re = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/i;
         return re.test(String(email));
+    }
+    function isStrongPassword(pw) {
+        const p = String(pw || '');
+        return p.length >= 8 && /[A-Z]/.test(p) && /[a-z]/.test(p) && /[0-9]/.test(p) && /[^A-Za-z0-9]/.test(p);
     }
     function isUsernameAllowed(username) {
         const normalized = String(username || '').toLowerCase();
@@ -354,32 +482,33 @@ document.addEventListener('DOMContentLoaded', () => {
                     let body = undefined;
 
                     if (action === 'approve' || action === 'reject') {
-                        url = `${API_BASE_URL}/admin/events/${eventId}/approve`;
+                        url = `/admin/events/${eventId}/approve`;
                         method = 'PATCH';
                         headers['Content-Type'] = 'application/json';
-                        body = JSON.stringify({ isApproved: action === 'approve' });
+                        body = { isApproved: action === 'approve' };
                     } else if (action === 'delete') {
-                        url = `${API_BASE_URL}/admin/events/${eventId}`;
+                        url = `/admin/events/${eventId}`;
                         method = 'DELETE';
                     }
 
-                    const response = await fetch(url, {
+                    const result = await apiRequest(url, {
                         method,
+                        useAuth: true,
+                        timeoutMs: 8000,
+                        retry: method === 'DELETE' ? 1 : 0,
                         headers,
                         body
                     });
 
-                    if (response.ok) {
-                        const okMsg = action === 'approve' ? 'Evento approvato con successo!' : (action === 'reject' ? 'Evento rifiutato con successo!' : 'Evento eliminato con successo!');
-                        alert(okMsg);
-                        fetchAdminEvents(); // Refresh the lists
-                    } else {
-                        const errorData = await response.json();
-                        alert(`Errore: ${errorData.error || errorData.message || 'Azione non riuscita.'}`);
-                    }
+                    const okMsg = action === 'approve' ? 'Evento approvato con successo!' : (action === 'reject' ? 'Evento rifiutato con successo!' : 'Evento eliminato con successo!');
+                    showToast(result.message || okMsg, 'success');
+                    fetchAdminEvents(); // Refresh the lists
                 } catch (error) {
-                    console.error(`Errore durante l'azione ${action} sull'evento:`, error);
-                    alert(`Errore di rete durante l'azione ${action}.`);
+                    console.error(`Errore durante l'azione ${action} sull'evento:`, error.message || error);
+                    const msg = (error && error.status)
+                        ? (error.data?.message || error.data?.error || `Operazione ${action} non riuscita.`)
+                        : `Errore di rete durante l'azione ${action}.`;
+                    showToast(msg, 'error');
                 }
             });
         });
@@ -448,11 +577,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     async function fetchCategories() {
         try {
-            const response = await fetch(`${API_BASE_URL}/events/categories`);
-            if (!response.ok) {
-                throw new Error('Network response was not ok');
-            }
-            const categories = await response.json();
+            const categories = await apiRequest('/events/categories', { timeoutMs: 6000, retry: 2 });
             eventCategorySelect.innerHTML = '<option value="">Seleziona una categoria</option>';
             categories.forEach(category => {
                 const option = document.createElement('option');
@@ -468,7 +593,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 createEventMessage.className = '';
             }
         } catch (error) {
-            console.error('Errore nel recupero delle categorie:', error);
+            console.error('Errore nel recupero delle categorie:', error.message || error);
             createEventMessage.textContent = 'Impossibile recuperare le categorie al momento.';
             createEventMessage.className = 'error-message';
         }
@@ -517,6 +642,12 @@ document.addEventListener('DOMContentLoaded', () => {
 
     createEventButton.addEventListener('click', (e) => {
         e.preventDefault();
+        const token = localStorage.getItem('token');
+        if (!token) {
+            console.warn('Tentativo di accedere a Crea Evento senza autenticazione.');
+            showPage(loginPage);
+            return;
+        }
         showPage(createEventPage);
         fetchCategories();
     });
@@ -533,6 +664,9 @@ document.addEventListener('DOMContentLoaded', () => {
         fetchEvents();
     });
 
+    let lastRegisteredEmail = null;
+    const resendBtn = document.getElementById('resend-verify-btn');
+
     registerForm.addEventListener('submit', async (e) => {
         e.preventDefault();
         const username = document.getElementById('register-username').value;
@@ -545,37 +679,80 @@ document.addEventListener('DOMContentLoaded', () => {
                 registerMessage.className = 'error-message';
                 return;
             }
+            if (!isStrongPassword(password)) {
+                registerMessage.textContent = 'Password troppo debole: almeno 8 caratteri, maiuscola, minuscola, numero e simbolo.';
+                registerMessage.className = 'error-message';
+                return;
+            }
             if (!isUsernameAllowed(username)) {
                 registerMessage.textContent = 'Username non consentito. Scegli un nome appropriato.';
                 registerMessage.className = 'error-message';
                 return;
             }
-            const response = await fetch(`${API_BASE_URL}/users/register`, {
+            const data = await apiRequest('/users/register', {
                 method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify({ username, email, password })
+                timeoutMs: 10000,
+                retry: 0,
+                body: { username, email, password }
             });
-            const data = await response.json();
-            if (response.ok) {
+            if (!data.status || (data.status && data.status < 400)) {
                 registerMessage.textContent = data.message;
                 registerMessage.className = 'success-message';
-                registerForm.reset();
+                lastRegisteredEmail = email;
+                if (resendBtn) {
+                    resendBtn.style.display = 'inline-block';
+                }
+                // Non resetto subito per poter usare il pulsante "Reinvia"
                 setTimeout(() => {
                     showPage(loginPage);
                     registerMessage.textContent = '';
+                    if (resendBtn) resendBtn.style.display = 'none';
+                    registerForm.reset();
                 }, 2000);
             } else {
                 registerMessage.textContent = data.message;
                 registerMessage.className = 'error-message';
             }
         } catch (error) {
-            console.error('Errore durante la registrazione:', error);
-            registerMessage.textContent = 'Errore di rete. Impossibile registrare l\'utente.';
+            console.error('Errore durante la registrazione:', error.message || error);
+            registerMessage.textContent = (error && error.status)
+                ? (error.data?.message || error.data?.error || error.message || 'Registrazione non riuscita.')
+                : 'Errore di rete. Impossibile registrare l\'utente.';
             registerMessage.className = 'error-message';
         }
     });
+
+    if (resendBtn) {
+        resendBtn.addEventListener('click', async () => {
+            const emailToUse = lastRegisteredEmail || document.getElementById('register-email').value;
+            if (!isValidEmail(emailToUse)) {
+                registerMessage.textContent = 'Email non valida per il reinvio.';
+                registerMessage.className = 'error-message';
+                return;
+            }
+            try {
+                const data = await apiRequest('/users/resend-verification', {
+                    method: 'POST',
+                    timeoutMs: 8000,
+                    retry: 1,
+                    body: { email: emailToUse }
+                });
+                if (!data.status || (data.status && data.status < 400)) {
+                    registerMessage.textContent = data.message || 'Email di verifica reinviata.';
+                    registerMessage.className = 'success-message';
+                } else {
+                    registerMessage.textContent = data.error || data.message || 'Impossibile reinviare l\'email.';
+                    registerMessage.className = 'error-message';
+                }
+            } catch (err) {
+                console.error('Errore reinvio verifica:', err.message || err);
+                registerMessage.textContent = (err && err.status)
+                    ? (err.data?.message || err.data?.error || err.message || 'Impossibile reinviare l\'email.')
+                    : 'Errore di rete nel reinvio.';
+                registerMessage.className = 'error-message';
+            }
+        });
+    }
 
     loginForm.addEventListener('submit', async (e) => {
         e.preventDefault();
@@ -583,15 +760,13 @@ document.addEventListener('DOMContentLoaded', () => {
         const password = document.getElementById('login-password').value;
 
         try {
-            const response = await fetch(`${API_BASE_URL}/users/login`, {
+            const data = await apiRequest('/users/login', {
                 method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify({ email, password })
+                timeoutMs: 10000,
+                retry: 0,
+                body: { email, password }
             });
-            const data = await response.json();
-            if (response.ok) {
+            if (!data.status || (data.status && data.status < 400)) {
                 localStorage.setItem('token', data.token);
                 localStorage.setItem('username', data.user?.username || '');
                 localStorage.setItem('role', data.user?.role || 'user');
@@ -601,24 +776,25 @@ document.addEventListener('DOMContentLoaded', () => {
                     localStorage.removeItem('userId');
                 }
                 currentUser = { username: data.user?.username || '', role: data.user?.role || 'user' };
+                console.log('Login success. Stored token and role:', !!localStorage.getItem('token'), localStorage.getItem('role'));
+                // Aggiorna immediatamente l'UI in base all'autenticazione
+                updateAuthUI();
                 loginMessage.textContent = data.message || 'Login effettuato con successo!';
                 loginMessage.className = 'success-message';
                 loginForm.reset();
-                setTimeout(() => {
-                    // Se è admin, vai direttamente al pannello admin
-                    if ((data.user?.role || localStorage.getItem('role')) === 'admin') {
-                        showPage(adminPage);
-                        fetchAdminEvents();
-                    } else {
-                        // Altrimenti vai alla home standard
-                        showPage(homePage);
-                        fetchEvents();
-                    }
-                    loginMessage.textContent = '';
-                }, 2000);
+                // Reindirizza subito alla vista corretta senza delay
+                if ((data.user?.role || localStorage.getItem('role')) === 'admin') {
+                    showPage(adminPage);
+                    fetchAdminEvents();
+                } else {
+                    showPage(homePage);
+                    fetchEvents();
+                }
+                // Pulisci il messaggio dopo il reindirizzamento
+                loginMessage.textContent = '';
             } else {
                 // Messaggio specifico richiesto quando utente non è registrato
-                if (response.status === 401 && (data.error === 'Credenziali non valide.' || data.message === 'Credenziali non valide.')) {
+                if ((data.status === 401 || data.code === 401) && (data.error === 'Credenziali non valide.' || data.message === 'Credenziali non valide.')) {
                     loginMessage.textContent = 'Utente non registrato. Per favore procedi con la registrazione.';
                 } else {
                     loginMessage.textContent = data.error || data.message || 'Credenziali non valide.';
@@ -626,8 +802,10 @@ document.addEventListener('DOMContentLoaded', () => {
                 loginMessage.className = 'error-message';
             }
         } catch (error) {
-            console.error('Errore durante il login:', error);
-            loginMessage.textContent = 'Errore di rete. Impossibile connettersi al server.';
+            console.error('Errore durante il login:', error.message || error);
+            loginMessage.textContent = (error && error.status)
+                ? (error.data?.message || error.data?.error || error.message || 'Credenziali non valide.')
+                : 'Errore di rete. Impossibile connettersi al server.';
             loginMessage.className = 'error-message';
         }
     });
@@ -681,17 +859,17 @@ document.addEventListener('DOMContentLoaded', () => {
                 Array.from(files).forEach(file => formData.append('photos', file));
             }
 
-            const response = await fetch(`${API_BASE_URL}/events`, {
+            const data = await apiRequest('/events', {
                 method: 'POST',
-                headers: {
-                    'Authorization': `Bearer ${token}`
-                },
+                useAuth: true,
+                timeoutMs: 15000,
+                retry: 0,
                 body: formData
             });
-            const data = await response.json();
-            if (response.ok) {
-                createEventMessage.textContent = data.message;
+            if (!data.status || (data.status && data.status < 400)) {
+                createEventMessage.textContent = 'Evento inviato. In attesa di approvazione da parte dell\'admin.';
                 createEventMessage.className = 'success-message';
+                showToast('Evento inviato per approvazione.', 'success');
                 createEventForm.reset();
                 setTimeout(() => {
                     showPage(homePage);
@@ -701,11 +879,15 @@ document.addEventListener('DOMContentLoaded', () => {
             } else {
                 createEventMessage.textContent = data.error || data.message || 'Errore nella creazione dell\'evento.';
                 createEventMessage.className = 'error-message';
+                showToast(createEventMessage.textContent, 'error');
             }
         } catch (error) {
-            console.error('Errore durante la creazione dell\'evento:', error);
-            createEventMessage.textContent = 'Errore di rete. Impossibile creare l\'evento.';
+            console.error('Errore durante la creazione dell\'evento:', error.message || error);
+            createEventMessage.textContent = (error && error.status)
+                ? (error.data?.message || error.data?.error || error.message || 'Errore nella creazione dell\'evento.')
+                : 'Errore di rete. Impossibile creare l\'evento.';
             createEventMessage.className = 'error-message';
+            showToast(createEventMessage.textContent, 'error');
         }
     });
 

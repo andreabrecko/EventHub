@@ -6,6 +6,12 @@ module.exports = (io) => {
     io.on('connection', (socket) => {
         console.log(`Nuova connessione Socket.IO: ${socket.id}`);
 
+        // Consenti ai client admin di unirsi alla stanza "admins" per notifiche
+        socket.on('joinAdmin', () => {
+            socket.join('admins');
+            console.log(`Socket ${socket.id} ha aderito alla stanza admins`);
+        });
+
         // Gestione ingresso nella chat di un evento (Chat interna)
         socket.on('joinEventChat', ({ eventId, userId }) => {
             const roomName = `event_${eventId}`;

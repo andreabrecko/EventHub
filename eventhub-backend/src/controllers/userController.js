@@ -6,6 +6,10 @@ const jwt = require('jsonwebtoken');
 
 const saltRounds = 10; 
 const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/i;
+const isStrongPassword = (password) => {
+    const p = String(password || '');
+    return p.length >= 8 && /[A-Z]/.test(p) && /[a-z]/.test(p) && /[0-9]/.test(p) && /[^A-Za-z0-9]/.test(p);
+};
 const isUsernameAllowed = (username) => {
     const normalized = String(username || '').toLowerCase();
     const badWords = ['cazzo','merda','stronzo','puttana','vaffanculo'];
@@ -32,6 +36,9 @@ exports.registerUser = async (req, res) => {
     if (!isUsernameAllowed(username)) {
         return res.status(400).json({ error: 'Username non consentito.' });
     }
+    if (!isStrongPassword(password)) {
+        return res.status(400).json({ error: 'Password troppo debole: minimo 8 caratteri con maiuscola, minuscola, numero e simbolo.' });
+    }
 
     try {
         console.log('Attempting to register user:', username, email);
@@ -54,15 +61,18 @@ exports.registerUser = async (req, res) => {
             [token, expiresAt, newUser.id]
         );
 
-        // Invio email di verifica
+        // Invio email di verifica (non bloccante, con gestione errori)
         try {
-            await sendVerificationEmail({ to: newUser.email, token });
+            Promise.resolve()
+                .then(() => sendVerificationEmail({ to: newUser.email, token }))
+                .then(() => console.log('Email di verifica inviata a', newUser.email))
+                .catch(mailErr => console.error('Errore invio email di verifica:', mailErr));
         } catch (mailErr) {
-            console.error('Errore invio email di verifica:', mailErr);
+            console.error('Errore invio email di verifica (sync):', mailErr);
         }
 
         res.status(201).json({
-            message: 'Registrazione completata! Controlla la tua email per confermare.',
+            message: 'Registrazione completata! Se non ricevi l\'email, usa "Resend".',
             user: { id: newUser.id, username: newUser.username, role: newUser.role }
         });
 
@@ -155,5 +165,37 @@ exports.verifyEmail = async (req, res) => {
     } catch (err) {
         console.error('Errore verifica email:', err);
         res.status(500).json({ error: 'Errore interno durante la verifica email.' });
+    }
+};
+
+// --- Reinvio email verifica (POST /api/users/resend-verification) ---
+exports.resendVerificationEmail = async (req, res) => {
+    const { email } = req.body;
+    if (!email || !emailRegex.test(String(email))) {
+        return res.status(400).json({ error: 'Email non valida o mancante.' });
+    }
+    try {
+        const result = await pool.query('SELECT id, email_verified FROM Users WHERE email = $1', [email]);
+        const user = result.rows[0];
+        if (!user) {
+            return res.status(404).json({ error: 'Utente non trovato.' });
+        }
+        if (user.email_verified) {
+            return res.status(400).json({ error: 'Email già verificata.' });
+        }
+        const token = crypto.randomBytes(32).toString('hex');
+        const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
+        await pool.query(
+            'UPDATE Users SET verification_token = $1, verification_token_expires = $2 WHERE id = $3',
+            [token, expiresAt, user.id]
+        );
+        Promise.resolve()
+            .then(() => sendVerificationEmail({ to: email, token }))
+            .then(() => console.log('Email di verifica reinviata a', email))
+            .catch(err => console.error('Errore reinvio email di verifica:', err));
+        return res.status(200).json({ message: 'Email di verifica reinviata (se configurazione SMTP corretta).' });
+    } catch (err) {
+        console.error('Errore resend verification:', err);
+        return res.status(500).json({ error: 'Errore interno durante il reinvio.' });
     }
 };

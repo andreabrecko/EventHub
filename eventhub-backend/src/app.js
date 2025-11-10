@@ -9,10 +9,11 @@ const errorHandler = require('./utils/errorHandler');
 const passport = require('passport');
 const { configurePassport } = require('./config/passport');
 const oauthRoutes = require('./routes/oauthRoutes');
+const swaggerUi = require('swagger-ui-express');
+const { swaggerSpec } = require('./config/swagger');
 
 // Attiva la connessione al DB importando il file (la pool si avvia)
-const { connectDB, pool } = require('./config/db'); 
-connectDB();
+const { pool } = require('./config/db'); 
 
 // Importa l'aggregatore di rotte
 const mainRouter = require('./routes/index');
@@ -26,12 +27,18 @@ app.use(cors({
 app.use(passport.initialize());
 configurePassport();
 
+// Servire il frontend statico (eventhub-client) dal backend
+const clientPath = path.join(__dirname, '..', '..', 'eventhub-client');
+app.use('/', express.static(clientPath));
+
 // Servire staticamente i file caricati (foto eventi)
 app.use('/uploads', express.static(path.join(__dirname, '..', 'uploads')));
 
 // --- Montaggio Rotte ---
 app.use('/api', mainRouter); // Tutte le rotte inizieranno con /api
 app.use('/api/auth', oauthRoutes);
+// Documentazione API (Swagger UI)
+app.use('/api/docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec));
 
 // Endpoint di test salute server
 app.get('/api/health', (req, res) => {

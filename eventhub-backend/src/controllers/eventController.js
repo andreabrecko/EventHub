@@ -2,24 +2,173 @@
 
 const { pool } = require('../config/db');
 const socketManager = require('../utils/socketManager'); // <--- AGGIUNTA PER NOTIFICHE LIVE
+const { initSchema } = require('../config/initSchema');
+
+// Fallback: assicura le tabelle principali in modo idempotente
+async function ensureCoreSchema() {
+    try {
+        await pool.query(`
+            CREATE TABLE IF NOT EXISTS Users (
+                id SERIAL PRIMARY KEY,
+                username TEXT NOT NULL,
+                email TEXT UNIQUE NOT NULL,
+                password_hash TEXT NOT NULL,
+                role TEXT NOT NULL DEFAULT 'user',
+                is_blocked BOOLEAN NOT NULL DEFAULT FALSE,
+                email_verified BOOLEAN NOT NULL DEFAULT FALSE,
+                verification_token TEXT,
+                verification_token_expires TIMESTAMP,
+                created_at TIMESTAMP DEFAULT NOW()
+            );
+        `);
+        await pool.query(`
+            CREATE TABLE IF NOT EXISTS Categories (
+                id SERIAL PRIMARY KEY,
+                name TEXT UNIQUE NOT NULL
+            );
+        `);
+        // Seed di base (idempotente)
+        await pool.query(`
+            INSERT INTO Categories (name)
+            VALUES
+                ('Benessere'),
+                ('Cultura'),
+                ('Sport'),
+                ('Musica'),
+                ('Tecnologia'),
+                ('Sociale'),
+                ('Food & Drink')
+            ON CONFLICT (name) DO NOTHING;
+        `);
+        await pool.query(`
+            CREATE TABLE IF NOT EXISTS Events (
+                id SERIAL PRIMARY KEY,
+                title TEXT NOT NULL,
+                description TEXT NOT NULL,
+                event_date TIMESTAMP NOT NULL,
+                location TEXT NOT NULL,
+                capacity INTEGER NOT NULL CHECK (capacity > 0),
+                category_id INTEGER REFERENCES Categories(id) ON DELETE SET NULL,
+                user_id INTEGER REFERENCES Users(id) ON DELETE CASCADE,
+                is_approved BOOLEAN NOT NULL DEFAULT FALSE,
+                min_participants INTEGER,
+                max_participants INTEGER,
+                created_at TIMESTAMP DEFAULT NOW()
+            );
+        `);
+        await pool.query(`
+            CREATE TABLE IF NOT EXISTS Registrations (
+                id SERIAL PRIMARY KEY,
+                user_id INTEGER NOT NULL REFERENCES Users(id) ON DELETE CASCADE,
+                event_id INTEGER NOT NULL REFERENCES Events(id) ON DELETE CASCADE,
+                registered_at TIMESTAMP DEFAULT NOW(),
+                UNIQUE (user_id, event_id)
+            );
+        `);
+        await pool.query(`
+            CREATE TABLE IF NOT EXISTS EventPhotos (
+                id SERIAL PRIMARY KEY,
+                event_id INTEGER REFERENCES Events(id) ON DELETE CASCADE,
+                file_path TEXT NOT NULL,
+                created_at TIMESTAMP DEFAULT NOW()
+            );
+        `);
+        await pool.query(`
+            CREATE TABLE IF NOT EXISTS ChatMessages (
+                id SERIAL PRIMARY KEY,
+                event_id INTEGER REFERENCES Events(id) ON DELETE CASCADE,
+                sender_id INTEGER REFERENCES Users(id) ON DELETE CASCADE,
+                message_text TEXT NOT NULL,
+                sent_at TIMESTAMP DEFAULT NOW()
+            );
+        `);
+    } catch (e) {
+        console.error('ensureCoreSchema error:', e?.message || e);
+        throw e;
+    }
+}
 
 // --- B.1 Creazione di eventi (Protetta) ---
 const createEvent = async (req, res) => {
-    const { id: user_id } = req.user; 
-    const { title, description, date, location, capacity, category_id, min_participants, max_participants } = req.body; 
+    const { id: user_id } = req.user;
+    let { title, description, date, location, capacity, category_id, min_participants, max_participants } = req.body;
 
     if (!title || !description || !date || !location || !capacity || !category_id) {
-        return res.status(400).json({ error: 'Fornire tutti i campi obbligatori per l\'evento.' });
+        return res.status(400).json({ error: "Fornire tutti i campi obbligatori per l'evento." });
+    }
+
+    // Normalizza tipi
+    capacity = Number(capacity);
+    category_id = Number(category_id);
+    min_participants = (min_participants !== undefined && min_participants !== null) ? Number(min_participants) : null;
+    max_participants = (max_participants !== undefined && max_participants !== null) ? Number(max_participants) : null;
+
+    if (!Number.isFinite(capacity) || capacity <= 0) {
+        return res.status(400).json({ error: 'Capacità non valida.' });
+    }
+    if (!Number.isInteger(category_id) || category_id <= 0) {
+        return res.status(400).json({ error: 'Categoria non valida.' });
+    }
+
+    // Normalizza data: accetta 'YYYY-MM-DDTHH:mm' oppure 'DD/MM/YYYY' (+ opzionale time)
+    let eventDateIso = null;
+    try {
+        if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(String(date))) {
+            eventDateIso = new Date(date);
+        } else if (/^\d{4}-\d{2}-\d{2}$/.test(String(date)) && req.body.time) {
+            eventDateIso = new Date(`${date}T${req.body.time}`);
+        } else if (/^\d{2}\/\d{2}\/\d{4}$/.test(String(date))) {
+            const [d, m, y] = String(date).split('/').map(s => Number(s));
+            const hh = (req.body.time && /^\d{2}:\d{2}$/.test(req.body.time)) ? Number(req.body.time.split(':')[0]) : 12;
+            const mm = (req.body.time && /^\d{2}:\d{2}$/.test(req.body.time)) ? Number(req.body.time.split(':')[1]) : 0;
+            eventDateIso = new Date(y, m - 1, d, hh, mm, 0);
+        } else {
+            // tenta parse generico
+            eventDateIso = new Date(date);
+        }
+        if (!(eventDateIso instanceof Date) || Number.isNaN(eventDateIso.getTime())) {
+            return res.status(400).json({ error: 'Formato data/ora non valido.' });
+        }
+    } catch (_) {
+        return res.status(400).json({ error: 'Formato data/ora non valido.' });
+    }
+
+    // Best-effort: assicurati che lo schema esista prima di procedere
+    try {
+        const ev = await pool.query("SELECT to_regclass('public.events') AS exists");
+        const cat = await pool.query("SELECT to_regclass('public.categories') AS exists");
+        if (!ev.rows[0]?.exists || !cat.rows[0]?.exists) {
+            try { await initSchema(); } catch (_) { await ensureCoreSchema(); }
+        }
+    } catch (schemaCheckErr) {
+        console.warn('Verifica schema non riuscita; applico fallback:', schemaCheckErr?.message || schemaCheckErr);
+        try { await ensureCoreSchema(); } catch (_) {}
     }
 
     try {
+        // Verifica categoria esistente
+        const catCheck = await pool.query('SELECT id FROM Categories WHERE id = $1', [category_id]);
+        if (catCheck.rows.length === 0) {
+            return res.status(400).json({ error: 'Categoria inesistente.' });
+        }
+
         // 1) Crea l'evento (user_id è il creatore). Imposta is_approved = FALSE
         const insertEventQuery = `
             INSERT INTO Events (title, description, event_date, location, capacity, category_id, user_id, min_participants, max_participants, is_approved)
             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, FALSE)
-            RETURNING *; 
+            RETURNING *;
         `;
-        const insertEventValues = [title, description, date, location, capacity, category_id, user_id, min_participants || null, max_participants || null];
+        const insertEventValues = [
+            title,
+            description,
+            eventDateIso.toISOString(),
+            location,
+            capacity,
+            category_id,
+            user_id,
+            min_participants,
+            max_participants
+        ];
         const eventResult = await pool.query(insertEventQuery, insertEventValues);
         const newEvent = eventResult.rows[0];
 
@@ -41,10 +190,15 @@ const createEvent = async (req, res) => {
                 RETURNING id;
             `;
             for (const file of req.files) {
-                // I file sono serviti via /uploads; salviamo il path pubblico
                 const publicPath = `/uploads/events/${file.filename}`;
                 await pool.query(insertPhotoQuery, [newEvent.id, publicPath]);
             }
+        }
+
+        // Notifica gli admin in tempo reale dell'evento creato
+        const io = socketManager.getIoInstance();
+        if (io) {
+            io.to('admins').emit('admin:eventCreated', { event: newEvent });
         }
 
         res.status(201).json({
@@ -53,8 +207,83 @@ const createEvent = async (req, res) => {
         });
 
     } catch (err) {
-        console.error("Errore creazione evento:", err);
-        res.status(500).json({ error: 'Errore interno del server.' });
+        console.error('Errore creazione evento:', err);
+        // Mappatura specifica degli errori Postgres per risposte più chiare
+        const code = err && err.code ? String(err.code) : '';
+        const msg = String(err?.message || '').toLowerCase();
+        const constraint = String(err?.constraint || '').toLowerCase();
+
+        // Errori di data/ora o parsing
+        if (code === '22007' || code === '22P02' || msg.includes('invalid input syntax for type timestamp') || msg.includes('date/time')) {
+            return res.status(400).json({ error: 'Data/ora evento non valida.' });
+        }
+        // Violazioni NOT NULL
+        if (code === '23502' || msg.includes('null value in column')) {
+            return res.status(400).json({ error: 'Campi obbligatori mancanti.' });
+        }
+        // Violazioni chiavi esterne
+        if (code === '23503' || msg.includes('foreign key') || msg.includes('violates foreign key')) {
+            if (constraint.includes('category') || constraint.includes('events_category_id')) {
+                return res.status(400).json({ error: 'Categoria non valida.' });
+            }
+            if (constraint.includes('user') || constraint.includes('events_user_id')) {
+                return res.status(400).json({ error: 'Utente non valido. Effettua nuovamente il login.' });
+            }
+            return res.status(400).json({ error: 'Riferimenti non validi (utente/categoria).' });
+        }
+        // Tabelle o colonne mancanti (schema non inizializzato)
+        if (code === '42P01' || (msg.includes('relation') && msg.includes('does not exist'))) {
+            try { await initSchema(); } catch (_) { await ensureCoreSchema(); }
+            // Dopo l'inizializzazione, prova una sola volta a rieseguire la creazione
+            try {
+                // Verifica categoria esistente
+                const catCheck2 = await pool.query('SELECT id FROM Categories WHERE id = $1', [category_id]);
+                if (catCheck2.rows.length === 0) {
+                    return res.status(400).json({ error: 'Categoria inesistente.' });
+                }
+                const insertEventQuery2 = `
+                    INSERT INTO Events (title, description, event_date, location, capacity, category_id, user_id, min_participants, max_participants, is_approved)
+                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, FALSE)
+                    RETURNING *;
+                `;
+                const insertEventValues2 = [
+                    title,
+                    description,
+                    eventDateIso.toISOString(),
+                    location,
+                    capacity,
+                    category_id,
+                    user_id,
+                    min_participants,
+                    max_participants
+                ];
+                const eventResult2 = await pool.query(insertEventQuery2, insertEventValues2);
+                const newEvent2 = eventResult2.rows[0];
+                // Foto
+                if (Array.isArray(req.files) && req.files.length > 0) {
+                    const insertPhotoQuery2 = `
+                        INSERT INTO EventPhotos (event_id, file_path)
+                        VALUES ($1, $2)
+                        RETURNING id;
+                    `;
+                    for (const file of req.files) {
+                        const publicPath = `/uploads/events/${file.filename}`;
+                        await pool.query(insertPhotoQuery2, [newEvent2.id, publicPath]);
+                    }
+                }
+                const io = socketManager.getIoInstance();
+                if (io) io.to('admins').emit('admin:eventCreated', { event: newEvent2 });
+                return res.status(201).json({ message: 'Evento creato con successo! In attesa di approvazione admin.', event: newEvent2 });
+            } catch (retryErr) {
+                console.error('Retry createEvent dopo initSchema fallito:', retryErr);
+                return res.status(500).json({ error: 'Errore interno dopo inizializzazione schema.' });
+            }
+        }
+        if (code === '42703') {
+            return res.status(500).json({ error: 'Schema DB non compatibile. Controlla le colonne della tabella Events.' });
+        }
+        // Fallback
+        return res.status(500).json({ error: 'Errore interno del server.' });
     }
 };
 

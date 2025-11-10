@@ -1,0 +1,96 @@
+// File: src/config/initSchema.js
+const { pool } = require('./db');
+
+// Inizializza lo schema del database creando le tabelle mancanti.
+// Usa CREATE TABLE IF NOT EXISTS per rendere l’operazione idempotente.
+async function initSchema() {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+
+    // Users
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS Users (
+        id SERIAL PRIMARY KEY,
+        username TEXT NOT NULL,
+        email TEXT UNIQUE NOT NULL,
+        password_hash TEXT NOT NULL,
+        role TEXT NOT NULL DEFAULT 'user',
+        is_blocked BOOLEAN NOT NULL DEFAULT FALSE,
+        email_verified BOOLEAN NOT NULL DEFAULT FALSE,
+        verification_token TEXT,
+        verification_token_expires TIMESTAMP,
+        created_at TIMESTAMP DEFAULT NOW()
+      );
+    `);
+
+    // Categories
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS Categories (
+        id SERIAL PRIMARY KEY,
+        name TEXT UNIQUE NOT NULL
+      );
+    `);
+
+    // Events
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS Events (
+        id SERIAL PRIMARY KEY,
+        title TEXT NOT NULL,
+        description TEXT NOT NULL,
+        event_date TIMESTAMP NOT NULL,
+        location TEXT NOT NULL,
+        capacity INTEGER NOT NULL CHECK (capacity > 0),
+        category_id INTEGER REFERENCES Categories(id) ON DELETE SET NULL,
+        user_id INTEGER REFERENCES Users(id) ON DELETE CASCADE,
+        is_approved BOOLEAN NOT NULL DEFAULT FALSE,
+        min_participants INTEGER,
+        max_participants INTEGER,
+        created_at TIMESTAMP DEFAULT NOW()
+      );
+    `);
+
+    // Registrations
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS Registrations (
+        id SERIAL PRIMARY KEY,
+        user_id INTEGER NOT NULL REFERENCES Users(id) ON DELETE CASCADE,
+        event_id INTEGER NOT NULL REFERENCES Events(id) ON DELETE CASCADE,
+        registered_at TIMESTAMP DEFAULT NOW(),
+        UNIQUE (user_id, event_id)
+      );
+    `);
+
+    // EventPhotos
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS EventPhotos (
+        id SERIAL PRIMARY KEY,
+        event_id INTEGER REFERENCES Events(id) ON DELETE CASCADE,
+        file_path TEXT NOT NULL,
+        created_at TIMESTAMP DEFAULT NOW()
+      );
+    `);
+
+    // ChatMessages
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS ChatMessages (
+        id SERIAL PRIMARY KEY,
+        event_id INTEGER REFERENCES Events(id) ON DELETE CASCADE,
+        sender_id INTEGER REFERENCES Users(id) ON DELETE CASCADE,
+        message_text TEXT NOT NULL,
+        sent_at TIMESTAMP DEFAULT NOW()
+      );
+    `);
+
+    await client.query('COMMIT');
+    console.log('✅ Schema DB inizializzato/validato con successo.');
+  } catch (err) {
+    await client.query('ROLLBACK');
+    console.error('❌ Errore inizializzazione schema DB:', err?.message || err);
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
+module.exports = { initSchema };

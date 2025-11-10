@@ -40,8 +40,10 @@
                 <input type="text" id="register-username" placeholder="Username" required>
                 <input type="email" id="register-email" placeholder="Email" required>
                 <input type="password" id="register-password" placeholder="Password" required>
+                <small class="hint" style="display:block; margin-top:4px;">Requisiti password: almeno 8 caratteri, maiuscola, minuscola, numero e simbolo.</small>
                 <button type="submit">Registrati</button>
                 <p id="register-message"></p>
+                <button type="button" id="resend-verify-btn" style="display:none; margin-top:8px;">Reinvia email di verifica</button>
             </form>
             <p class="hint">Dopo la registrazione riceverai un’email di conferma.</p>
         </div>
@@ -113,6 +115,7 @@
         </div>
     </div>
 
+    <script src="/socket.io/socket.io.js"></script>
     <script src="script.js"></script>
 </body>
 </html>

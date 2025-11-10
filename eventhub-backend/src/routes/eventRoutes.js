@@ -29,7 +29,24 @@ const storage = multer.diskStorage({
     }
 });
 
-const upload = multer({ storage });
+const fileFilter = (req, file, cb) => {
+    const isImage = file.mimetype && file.mimetype.startsWith('image/');
+    if (!isImage) {
+        return cb(new Error('Sono consentite solo immagini.'));
+    }
+    cb(null, true);
+};
+
+const upload = multer({ storage, fileFilter, limits: { fileSize: 5 * 1024 * 1024 } });
+
+const uploadPhotosMiddleware = (req, res, next) => {
+    upload.array('photos', 10)(req, res, (err) => {
+        if (err) {
+            return res.status(400).json({ error: err.message || 'Errore upload file.' });
+        }
+        next();
+    });
+};
 
 // Rotta pubblica per la lista e filtri
 router.get('/', eventController.getEvents);
@@ -38,7 +55,7 @@ router.get('/', eventController.getEvents);
 // POST /api/events (Creazione Evento)
 router.post('/', 
     authMiddleware.protect,
-    upload.array('photos', 10),
+    uploadPhotosMiddleware,
     eventController.createEvent
 );
 

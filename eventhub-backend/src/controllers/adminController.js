@@ -1,6 +1,7 @@
 // File: src/controllers/adminController.js
 
 const { pool } = require('../config/db');
+const socketManager = require('../utils/socketManager');
 
 // --- D.1 Gestione Eventi (Approva/Rifiuta) ---
 exports.approveEvent = async (req, res) => {
@@ -25,6 +26,11 @@ exports.approveEvent = async (req, res) => {
         }
 
         const action = isApproved ? 'approvato' : 'rifiutato';
+        // Notifica gli admin (e potenzialmente il creatore) dell'aggiornamento
+        const io = socketManager.getIoInstance();
+        if (io) {
+            io.to('admins').emit('admin:eventUpdated', { event: result.rows[0] });
+        }
         res.status(200).json({
             message: `Evento '${result.rows[0].title}' è stato ${action} con successo.`,
             event: result.rows[0]
@@ -119,6 +125,10 @@ exports.deleteEventAdmin = async (req, res) => {
             return res.status(404).json({ error: 'Evento non trovato.' });
         }
 
+        const io = socketManager.getIoInstance();
+        if (io) {
+            io.to('admins').emit('admin:eventDeleted', { id: eventId });
+        }
         res.status(200).json({ message: `Evento '${result.rows[0].title}' eliminato con successo dall'amministratore.` });
 
     } catch (err) {

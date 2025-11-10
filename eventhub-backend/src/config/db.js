@@ -14,9 +14,15 @@ const pool = new Pool({
     ssl: useSSL ? { rejectUnauthorized: false } : false
 });
 
+let isConnected = false;
 const connectDB = async () => {
+    if (isConnected) {
+        return; // Evita riconnessioni multiple
+    }
     try {
-        await pool.connect(); 
+        // Esegue una semplice query di health-check senza trattenere un client
+        await pool.query('SELECT 1');
+        isConnected = true;
         console.log('✅ Connesso al database PostgreSQL.');
     } catch (err) {
         console.error('ERRORE: Connessione al database fallita!', err.message);

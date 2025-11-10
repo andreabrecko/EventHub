@@ -59,6 +59,7 @@ process.on('uncaughtException', (err, origin) => {
 });
 
 const { connectDB, pool } = require('./src/config/db');
+const { initSchema } = require('./src/config/initSchema');
 const { seedCategories } = require('./src/controllers/eventController');
 
 // Funzione per aggiornare il ruolo di un utente a 'admin' e la sua password
@@ -79,16 +80,40 @@ const updateAdminRole = async (email, newPasswordHash) => {
 };
 
 const startServer = async () => {
-    await connectDB();
-    await seedCategories(); // Call seedCategories after connecting to DB
+    let dbConnected = false;
+    try {
+        await connectDB();
+        dbConnected = true;
+    } catch (err) {
+        console.error('Avvio senza DB: impossibile connettersi, il server continuerà a servire risorse statiche e API non-DB.');
+    }
+
+    if (dbConnected) {
+        try {
+            await initSchema(); // Garantisce la presenza delle tabelle richieste
+        } catch (err) {
+            console.error('Inizializzazione schema saltata per errore DB:', err?.message || err);
+        }
+        try {
+            await seedCategories(); // Popola le categorie di default se assenti
+        } catch (err) {
+            console.error('Seed delle categorie saltato per errore DB:', err?.message || err);
+        }
+    }
 
     server.listen(PORT, '0.0.0.0', () => {
         console.log(`Server EventHub (Simplified) in esecuzione sulla porta ${PORT}`);
     });
 
-    // Update admin role and password hash if admin@test.com exists
-    const newPasswordHash = '$2b$10$ATS/MbYYfvKO525VmkvpsuHq1hOU/76MEOj5AVzRgeUgvRZF2eJPO'; // Hash for 'Password123'
-    await updateAdminRole('admin@test.com', newPasswordHash);
+    if (dbConnected) {
+        // Update admin role and password hash if admin@test.com exists
+        const newPasswordHash = '$2b$10$ATS/MbYYfvKO525VmkvpsuHq1hOU/76MEOj5AVzRgeUgvRZF2eJPO'; // Hash for 'Password123'
+        try {
+            await updateAdminRole('admin@test.com', newPasswordHash);
+        } catch (err) {
+            console.error('Aggiornamento ruolo admin saltato per errore DB:', err?.message || err);
+        }
+    }
 };
 
 startServer();
