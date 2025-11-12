@@ -1,4 +1,6 @@
 // File: src/routes/eventRoutes.js
+// Gestione eventi: lista, creazione, modifica, cancellazione, iscrizione.
+// Include upload foto evento tramite Multer con filtri e limiti.
 
 const express = require('express');
 const router = express.Router();

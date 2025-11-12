@@ -1,8 +1,10 @@
 // File: src/app.js
+// Configura l'applicazione Express: middleware globali, rotte, risorse statiche,
+// documentazione API e health check.
 
 const express = require('express');
 const app = express();
-console.log('app.js initialized'); // Aggiunto per il debug
+// Inizializzazione applicazione Express
 const cors = require('cors');
 const path = require('path');
 const errorHandler = require('./utils/errorHandler');
@@ -56,7 +58,6 @@ app.get('/api/health', (req, res) => {
                 created_at TIMESTAMP DEFAULT NOW()
             );
         `);
-        console.log('Tabella EventPhotos pronta.');
     } catch (err) {
         console.error('Errore inizializzazione EventPhotos:', err);
     }

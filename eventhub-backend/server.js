@@ -1,5 +1,6 @@
 // File: server.js
-console.log('Server.js started!');
+// Punto di ingresso dell'applicazione: avvia Express, Socket.IO e il server HTTP,
+// inizializza lo schema e le categorie e gestisce gli errori di processo.
 
 // Carica subito le variabili d'ambiente dal file .env
 require('dotenv').config();
@@ -31,10 +32,7 @@ try {
     console.warn('Socket handler non caricato:', e?.message || e);
 }
 
-// Rotta di test semplice
-app.get('/api/health', (req, res) => {
-    res.status(200).json({ status: 'API running', service: 'EventHub - Simplified' });
-});
+// Nota: l'endpoint di health è definito in src/app.js
 
 // --- 3. AVVIO ASCOLTO ---
 
@@ -69,11 +67,7 @@ const updateAdminRole = async (email, newPasswordHash) => {
             'UPDATE users SET role = $1, password_hash = $2 WHERE email = $3 RETURNING *;',
             ['admin', newPasswordHash, email]
         );
-        if (result.rows.length > 0) {
-            console.log(`Ruolo e password dell'utente ${email} aggiornati a 'admin' con successo.`);
-        } else {
-            console.log(`Utente ${email} non trovato.`);
-        }
+        // Aggiornamento admin eseguito se l'utente esiste
     } catch (error) {
         console.error(`Errore nell'aggiornamento del ruolo e della password per ${email}:`, error);
     }

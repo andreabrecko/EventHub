@@ -5,6 +5,7 @@ const router = express.Router();
 
 const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:5173';
 
+// Emissione token e redirect verso il frontend con query params
 function issueTokenAndRedirect(req, res) {
   const user = req.user;
   const token = jwt.sign({ id: user.id, role: user.role }, process.env.JWT_SECRET, { expiresIn: '24h' });
@@ -28,3 +29,6 @@ router.get('/failure', (req, res) => {
 });
 
 module.exports = router;
+// File: src/routes/oauthRoutes.js
+// Autenticazione OAuth (Google, GitHub) integrata con Passport.
+// Dopo login successo, emette un JWT e reindirizza al frontend con parametri.

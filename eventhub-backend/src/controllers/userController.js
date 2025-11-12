@@ -22,8 +22,8 @@ const isUsernameAllowed = (username) => {
 const crypto = require('crypto');
 const { sendVerificationEmail } = require('../services/emailService');
 
+// Registra un nuovo utente, valida input, cifra la password e opzionalmente invia email di verifica.
 exports.registerUser = async (req, res) => {
-    console.log('Richiesta di registrazione ricevuta:', req.body);
     const { username, email, password } = req.body; 
 
     if (!username || !email || !password) {
@@ -41,7 +41,6 @@ exports.registerUser = async (req, res) => {
     }
 
     try {
-        console.log('Attempting to register user:', username, email);
         // Cifratura della password prima del salvataggio
         const password_hash = await bcrypt.hash(password, saltRounds);
 
@@ -53,22 +52,24 @@ exports.registerUser = async (req, res) => {
         const result = await pool.query(query, [username, email, password_hash]);
         const newUser = result.rows[0];
 
-        // Genera token di verifica email e scadenza (24h)
-        const token = crypto.randomBytes(32).toString('hex');
-        const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
-        await pool.query(
-            'UPDATE Users SET verification_token = $1, verification_token_expires = $2 WHERE id = $3',
-            [token, expiresAt, newUser.id]
-        );
-
-        // Invio email di verifica (non bloccante, con gestione errori)
-        try {
-            Promise.resolve()
-                .then(() => sendVerificationEmail({ to: newUser.email, token }))
-                .then(() => console.log('Email di verifica inviata a', newUser.email))
-                .catch(mailErr => console.error('Errore invio email di verifica:', mailErr));
-        } catch (mailErr) {
-            console.error('Errore invio email di verifica (sync):', mailErr);
+        const colsRes = await pool.query("SELECT column_name FROM information_schema.columns WHERE table_name = 'users'");
+        const cols = colsRes.rows.map(r => String(r.column_name).toLowerCase());
+        const hasVerify = cols.includes('verification_token') && cols.includes('verification_token_expires');
+        if (hasVerify) {
+            const token = crypto.randomBytes(32).toString('hex');
+            const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
+            await pool.query(
+                'UPDATE Users SET verification_token = $1, verification_token_expires = $2 WHERE id = $3',
+                [token, expiresAt, newUser.id]
+            );
+            try {
+                Promise.resolve()
+                    .then(() => sendVerificationEmail({ to: newUser.email, token }))
+                    .then(() => console.log('Email di verifica inviata a', newUser.email))
+                    .catch(mailErr => console.error('Errore invio email di verifica:', mailErr));
+            } catch (mailErr) {
+                console.error('Errore invio email di verifica (sync):', mailErr);
+            }
         }
 
         res.status(201).json({
@@ -86,8 +87,8 @@ exports.registerUser = async (req, res) => {
 };
 
 // --- Login Utente (POST /api/users/login) ---
+// Autentica un utente con email/password e genera un JWT per l'accesso alle rotte protette.
 exports.loginUser = async (req, res) => {
-    console.log('Login request received:', req.body.email);
     const { email, password } = req.body; 
 
     if (!email || !password) {
@@ -99,36 +100,27 @@ exports.loginUser = async (req, res) => {
         // 1. Cerca l'utente per email
         const userResult = await pool.query('SELECT * FROM Users WHERE email = $1', [email]);
         const user = userResult.rows[0];
-        console.log('User found:', user ? user.email : 'none');
 
         if (!user) {
-            console.log('User not found for email:', email);
             return res.status(404).json({ error: 'Utente non registrato. Per favore procedi con la registrazione.' });
         }
 
         // 2. Confronta la password cifrata
         const isMatch = await bcrypt.compare(password, user.password_hash);
-        console.log('Password match:', isMatch);
 
         if (!isMatch) {
-            console.log('Password mismatch for user:', email);
             return res.status(401).json({ error: 'Credenziali non valide.' });
         }
 
         // 3. Genera il JWT
-        // Genera JWT
-        console.log('Generating JWT for user:', user.email, 'with role:', user.role);
-        console.log('JWT_SECRET in userController (signing):', process.env.JWT_SECRET);
         const token = jwt.sign({ id: user.id, role: user.role }, process.env.JWT_SECRET, { expiresIn: '24h' });
-        // console.log('JWT_SECRET used for signing:', process.env.JWT_SECRET);
-        // console.log('Generated Token:', token);
 
         res.status(200).json({
             message: 'Login effettuato con successo!',
             token: token,
             user: { id: user.id, username: user.username, role: user.role }
         });
-        console.log('Login successful for user:', user.email);
+        // Login OK
 
     } catch (err) {
         console.error("Errore login:", err);

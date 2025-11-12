@@ -28,6 +28,7 @@ const transporter = nodemailer.createTransport(
 );
 
 async function verifySMTP() {
+  // Verifica disponibilità del trasporto: in mock/dry-run ritorna sempre ok
   if (useJsonTransport || isDryRun) {
     return { ok: true, message: 'SMTP in modalità mock/dry-run' };
   }
@@ -40,6 +41,7 @@ async function verifySMTP() {
 }
 
 async function sendVerificationEmail({ to, token }) {
+  // Costruisce il link di verifica e invia l'email con timeout controllato
   const baseUrl = process.env.APP_BASE_URL || 'http://localhost:3000';
   const verifyUrl = `${baseUrl}/api/users/verify-email?token=${encodeURIComponent(token)}`;
 
@@ -69,3 +71,7 @@ async function sendVerificationEmail({ to, token }) {
 }
 
 module.exports = { sendVerificationEmail, verifySMTP };
+// File: src/services/emailService.js
+// Servizio SMTP per verifica email utenti.
+// Supporta modalità mock (jsonTransport) e dry-run per sviluppo/sistemi senza SMTP.
+// Espone: verifySMTP() per testare la connessione, sendVerificationEmail() per inviare link di conferma.

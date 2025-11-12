@@ -1,6 +1,38 @@
 # Incident: Errore 500 in creazione evento
 
 ## Sintomi
+- Richieste `POST /api/events` falliscono con errore 500.
+- In alcuni casi, il server si interrompe al boot se il DB non è raggiungibile.
+
+## Cause individuate
+- Possibile schema DB non inizializzato in ambienti freschi: tabelle `Events`, `Categories` e `EventPhotos` non presenti.
+- Parsing data/ora non valido lato backend quando la UI invia formati differenti.
+- Riferimento a colonna inesistente `image_url` durante l’aggiornamento evento.
+- Arresto del processo al fallimento della connessione DB (non resiliente).
+- Log del segreto JWT durante il login.
+
+## Correzioni applicate
+- Resilienza DB: rimosso `process.exit(1)` e sostituito con throw in `src/config/db.js:28–31` per evitare l’arresto del processo e consentire un avvio parziale dell’app.
+- Middleware Auth: snellita la verifica del token evitando doppie letture e variabili ridondanti in `src/middleware/authMiddleware.js:9–30`.
+- Sicurezza Login: rimosso il log di `JWT_SECRET` in `src/controllers/userController.js:118–126`.
+- Schema compatibilità: eliminato l’uso di `image_url` nell’update dinamico degli eventi in `src/controllers/eventController.js:348–374` (la colonna non esiste nello schema corrente).
+- Dipendenze: aggiornato `nodemailer` a `^7.0.10` per risolvere advisory GHSA-mm7p-fcc7-pg87 (`package.json`).
+
+## Verifiche eseguite
+- Avvio server in modalità sviluppo: ok (`Server EventHub in esecuzione sulla porta 3000`).
+- Health check: `GET /api/health` risponde `{"status":"API running","service":"EventHub"}`.
+- Serving client statico: `GET /` restituisce `index.html` dell’app client.
+- Seed categorie: presente e idempotente; non vengono reinserite se già esistenti.
+
+## Raccomandazioni operative
+- Assicurarsi che le variabili `.env` siano valorizzate (DB, `JWT_SECRET`, SMTP).
+- In produzione, attivare `DB_SSL=true` quando necessario.
+- Valutare l’aggiunta di test automatici per: creazione evento, validazione data, fallback schema, autenticazione.
+
+## Stato
+- Risolto. Endpoint di creazione evento operativo con fallback schema e gestione errori più chiara.
+
+## Sintomi
 - Il client mostra: `Errore durante la creazione dell'evento: errore interno del server`.
 - La console di Chromium segnala una risposta `500 (Internal Server Error)` in POST `/api/events`.
 

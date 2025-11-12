@@ -90,7 +90,7 @@ exports.getPendingEvents = async (req, res) => {
             SELECT 
                 e.*, 
                 u.username as creator_username,
-                COALESCE(p.photos, '[]') AS photos
+                COALESCE(p.photos, '[]'::json) AS photos
             FROM Events e
             JOIN Users u ON e.user_id = u.id
             LEFT JOIN LATERAL (

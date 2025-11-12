@@ -88,7 +88,9 @@ async function ensureCoreSchema() {
     }
 }
 
-// --- B.1 Creazione di eventi (Protetta) ---
+// Crea un evento a partire dai dati del form multipart.
+// Valida i campi, normalizza data/ora, verifica lo schema e inserisce l'evento.
+// Supporta schemi variabili (creator_id/user_id, min/max_participants) e salva eventuali foto.
 const createEvent = async (req, res) => {
     const { id: user_id } = req.user;
     let { title, description, date, location, capacity, category_id, min_participants, max_participants } = req.body;
@@ -153,23 +155,20 @@ const createEvent = async (req, res) => {
         }
 
         // 1) Crea l'evento (user_id è il creatore). Imposta is_approved = FALSE
-        const insertEventQuery = `
-            INSERT INTO Events (title, description, event_date, location, capacity, category_id, user_id, min_participants, max_participants, is_approved)
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, FALSE)
-            RETURNING *;
-        `;
-        const insertEventValues = [
-            title,
-            description,
-            eventDateIso.toISOString(),
-            location,
-            capacity,
-            category_id,
-            user_id,
-            min_participants,
-            max_participants
-        ];
-        const eventResult = await pool.query(insertEventQuery, insertEventValues);
+        const colsRes = await pool.query("SELECT column_name FROM information_schema.columns WHERE table_name = 'events'");
+        const cols = colsRes.rows.map(r => String(r.column_name).toLowerCase());
+        const hasMin = cols.includes('min_participants');
+        const hasMax = cols.includes('max_participants');
+        let insertCols = ['title','description','event_date','location','capacity','category_id'];
+        let placeholders = ['$1','$2','$3','$4','$5','$6'];
+        let insertVals = [title, description, eventDateIso.toISOString(), location, capacity, category_id];
+        if (cols.includes('creator_id')) { insertCols.push('creator_id'); placeholders.push(`$${placeholders.length+1}`); insertVals.push(user_id); }
+        if (cols.includes('user_id')) { insertCols.push('user_id'); placeholders.push(`$${placeholders.length+1}`); insertVals.push(user_id); }
+        if (hasMin) { insertCols.push('min_participants'); placeholders.push(`$${placeholders.length+1}`); insertVals.push(min_participants); }
+        if (hasMax) { insertCols.push('max_participants'); placeholders.push(`$${placeholders.length+1}`); insertVals.push(max_participants); }
+        insertCols.push('is_approved'); placeholders.push(`$${placeholders.length+1}`); insertVals.push(false);
+        const insertEventQuery = `INSERT INTO Events (${insertCols.join(',')}) VALUES (${placeholders.join(',')}) RETURNING *;`;
+        const eventResult = await pool.query(insertEventQuery, insertVals);
         const newEvent = eventResult.rows[0];
 
         // 2) Assicurati che la tabella EventPhotos esista
@@ -241,23 +240,20 @@ const createEvent = async (req, res) => {
                 if (catCheck2.rows.length === 0) {
                     return res.status(400).json({ error: 'Categoria inesistente.' });
                 }
-                const insertEventQuery2 = `
-                    INSERT INTO Events (title, description, event_date, location, capacity, category_id, user_id, min_participants, max_participants, is_approved)
-                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, FALSE)
-                    RETURNING *;
-                `;
-                const insertEventValues2 = [
-                    title,
-                    description,
-                    eventDateIso.toISOString(),
-                    location,
-                    capacity,
-                    category_id,
-                    user_id,
-                    min_participants,
-                    max_participants
-                ];
-                const eventResult2 = await pool.query(insertEventQuery2, insertEventValues2);
+                const colsRes2 = await pool.query("SELECT column_name FROM information_schema.columns WHERE table_name = 'events'");
+                const cols2 = colsRes2.rows.map(r => String(r.column_name).toLowerCase());
+                const hasMin2 = cols2.includes('min_participants');
+                const hasMax2 = cols2.includes('max_participants');
+                let insertCols2 = ['title','description','event_date','location','capacity','category_id'];
+                let placeholders2 = ['$1','$2','$3','$4','$5','$6'];
+                let insertVals2 = [title, description, eventDateIso.toISOString(), location, capacity, category_id];
+                if (cols2.includes('creator_id')) { insertCols2.push('creator_id'); placeholders2.push(`$${placeholders2.length+1}`); insertVals2.push(user_id); }
+                if (cols2.includes('user_id')) { insertCols2.push('user_id'); placeholders2.push(`$${placeholders2.length+1}`); insertVals2.push(user_id); }
+                if (hasMin2) { insertCols2.push('min_participants'); placeholders2.push(`$${placeholders2.length+1}`); insertVals2.push(min_participants); }
+                if (hasMax2) { insertCols2.push('max_participants'); placeholders2.push(`$${placeholders2.length+1}`); insertVals2.push(max_participants); }
+                insertCols2.push('is_approved'); placeholders2.push(`$${placeholders2.length+1}`); insertVals2.push(false);
+                const insertEventQuery2 = `INSERT INTO Events (${insertCols2.join(',')}) VALUES (${placeholders2.join(',')}) RETURNING *;`;
+                const eventResult2 = await pool.query(insertEventQuery2, insertVals2);
                 const newEvent2 = eventResult2.rows[0];
                 // Foto
                 if (Array.isArray(req.files) && req.files.length > 0) {
@@ -297,9 +293,9 @@ const getEvents = async (req, res) => {
             u.username as creator_username, 
             c.name as category_name,
             (SELECT COUNT(*) FROM Registrations r WHERE r.event_id = e.id) as current_registrations,
-            COALESCE(p.photos, '[]') AS photos
+            COALESCE(p.photos, '[]'::json) AS photos
         FROM Events e
-        JOIN Users u ON e.user_id = u.id
+        JOIN Users u ON COALESCE(e.user_id, e.creator_id) = u.id
         LEFT JOIN Categories c ON e.category_id = c.id
         LEFT JOIN LATERAL (
             SELECT json_agg(ep.file_path) AS photos
@@ -345,17 +341,20 @@ const getEvents = async (req, res) => {
 const updateEvent = async (req, res) => {
     const { id: eventId } = req.params;
     const { id: userId } = req.user; 
-    const { title, description, event_date, location, capacity, category_id, image_url } = req.body;
+    const { title, description, event_date, location, capacity, category_id } = req.body;
 
     try {
         // 1. Autorizzazione: verifica che l'utente sia il creatore
-        const checkQuery = 'SELECT user_id FROM Events WHERE id = $1';
+        const colsRes = await pool.query("SELECT column_name FROM information_schema.columns WHERE table_name = 'events'");
+        const cols = colsRes.rows.map(r => String(r.column_name).toLowerCase());
+        const ownerCol = cols.includes('user_id') ? 'user_id' : (cols.includes('creator_id') ? 'creator_id' : 'user_id');
+        const checkQuery = `SELECT ${ownerCol} AS owner_id FROM Events WHERE id = $1`;
         const checkResult = await pool.query(checkQuery, [eventId]);
 
         if (checkResult.rows.length === 0) {
             return res.status(404).json({ error: 'Evento non trovato.' });
         }
-        if (checkResult.rows[0].user_id !== userId) {
+        if (checkResult.rows[0].owner_id !== userId) {
             return res.status(403).json({ error: 'Non sei autorizzato a modificare questo evento.' });
         }
         
@@ -370,7 +369,7 @@ const updateEvent = async (req, res) => {
         if (location !== undefined) { setClauses.push(`location = $${paramIndex++}`); updateParams.push(location); }
         if (capacity !== undefined) { setClauses.push(`capacity = $${paramIndex++}`); updateParams.push(capacity); }
         if (category_id !== undefined) { setClauses.push(`category_id = $${paramIndex++}`); updateParams.push(category_id); }
-        if (image_url !== undefined) { setClauses.push(`image_url = $${paramIndex++}`); updateParams.push(image_url); }
+        
         
         if (setClauses.length === 0) {
             return res.status(400).json({ error: 'Nessun campo valido fornito per la modifica.' });
@@ -404,13 +403,16 @@ const deleteEvent = async (req, res) => {
 
     try {
         // 1. Autorizzazione: verifica che l'utente sia il creatore
-        const checkQuery = 'SELECT user_id FROM Events WHERE id = $1';
+        const colsRes = await pool.query("SELECT column_name FROM information_schema.columns WHERE table_name = 'events'");
+        const cols = colsRes.rows.map(r => String(r.column_name).toLowerCase());
+        const ownerCol = cols.includes('user_id') ? 'user_id' : (cols.includes('creator_id') ? 'creator_id' : 'user_id');
+        const checkQuery = `SELECT ${ownerCol} AS owner_id FROM Events WHERE id = $1`;
         const checkResult = await pool.query(checkQuery, [eventId]);
 
         if (checkResult.rows.length === 0) {
             return res.status(404).json({ error: 'Evento non trovato.' });
         }
-        if (checkResult.rows[0].user_id !== userId) {
+        if (checkResult.rows[0].owner_id !== userId) {
             return res.status(403).json({ error: 'Non sei autorizzato a cancellare questo evento.' });
         }
 

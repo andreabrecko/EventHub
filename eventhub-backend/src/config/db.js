@@ -1,4 +1,6 @@
 // EventHub/eventhub-backend/src/config/db.js
+// Modulo di configurazione della connessione PostgreSQL.
+// Espone un pool condiviso e una funzione di health-check/inizializzazione.
 
 const { Pool } = require('pg'); 
 
@@ -15,6 +17,8 @@ const pool = new Pool({
 });
 
 let isConnected = false;
+// Esegue una query di health-check sul DB per confermare la connettività.
+// È idempotente: dopo la prima connessione, ulteriori chiamate ritornano immediatamente.
 const connectDB = async () => {
     if (isConnected) {
         return; // Evita riconnessioni multiple
@@ -27,7 +31,7 @@ const connectDB = async () => {
     } catch (err) {
         console.error('ERRORE: Connessione al database fallita!', err.message);
         console.error('Verifica che PostgreSQL sia avviato e le variabili .env siano corrette.');
-        process.exit(1); 
+        throw err;
     }
 };
 

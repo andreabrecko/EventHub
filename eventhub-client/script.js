@@ -74,9 +74,15 @@ document.addEventListener('DOMContentLoaded', () => {
         page.style.display = 'block';
     }
 
-    const API_BASE_URL = (window.location.protocol === 'file:'
-        ? 'http://localhost:3000/api'
-        : `${window.location.origin}/api`);
+    const DEFAULT_API_ORIGIN = 'http://localhost:3000';
+    const API_ORIGIN = (() => {
+        const origin = window.location.origin;
+        if (/:(3000)$/i.test(origin)) return origin;
+        return DEFAULT_API_ORIGIN;
+    })();
+    const API_BASE_URL = `${API_ORIGIN}/api`;
+    const PLACEHOLDER_PHOTO = 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="600" height="300"><rect width="100%" height="100%" fill="%23222"/><text x="50%" y="50%" dominant-baseline="middle" text-anchor="middle" fill="%23bbb" font-family="Arial" font-size="32">Evento</text></svg>';
+    const DEFAULT_AUTOPLAY_MS = 5000;
 
     // --- Wrapper API con timeout, retry e header uniformi ---
     const DEFAULT_TIMEOUT_MS = 8000;
@@ -91,9 +97,51 @@ document.addEventListener('DOMContentLoaded', () => {
         return `${API_BASE_URL}${path.startsWith('/') ? '' : '/'}${path}`;
     }
 
+    function normalizePhotoUrl(url) {
+        if (!url) return '';
+        if (/^https?:\/\//i.test(url)) return url;
+        if (url.startsWith('/uploads/')) return `${API_ORIGIN}${url}`;
+        return url;
+    }
+    function extractPhotos(raw) {
+        let photos = [];
+        if (Array.isArray(raw)) {
+            photos = raw;
+        } else if (typeof raw === 'string') {
+            try {
+                const parsed = JSON.parse(raw);
+                if (Array.isArray(parsed)) photos = parsed;
+            } catch {}
+        }
+        if (!Array.isArray(photos) || photos.length === 0) {
+            photos = [PLACEHOLDER_PHOTO];
+        }
+        return photos;
+    }
+
     function getAuthHeader() {
         const token = localStorage.getItem('token');
         return token ? { Authorization: `Bearer ${token}` } : {};
+    }
+
+    async function ensureAuthenticated() {
+        const token = localStorage.getItem('token');
+        if (!token) return false;
+        try {
+            await apiRequest('/users/me', { useAuth: true, timeoutMs: 4000, retry: 0 });
+            return true;
+        } catch (err) {
+            if (err && err.status === 401) {
+                localStorage.removeItem('token');
+                localStorage.removeItem('username');
+                localStorage.removeItem('role');
+                localStorage.removeItem('userId');
+                updateAuthUI();
+                showToast('Sessione scaduta. Effettua nuovamente il login.', 'warn');
+                showPage(loginPage);
+            }
+            return false;
+        }
     }
 
     async function safeJson(response) {
@@ -327,7 +375,9 @@ document.addEventListener('DOMContentLoaded', () => {
             const pendingPayload = await apiRequest('/admin/events/pending', { useAuth: true, timeoutMs: 6000, retry: 1 });
             const pendingEvents = Array.isArray(pendingPayload) ? pendingPayload : (Array.isArray(pendingPayload.events) ? pendingPayload.events : []);
             displayAdminEvents(pendingEvents, pendingEventsList, 'pending');
-            approvedEventsList.innerHTML = '<p>Integrazione in corso.</p>';
+            const approvedPayload = await apiRequest('/events', { timeoutMs: 6000, retry: 1 });
+            const approvedEvents = Array.isArray(approvedPayload) ? approvedPayload : (Array.isArray(approvedPayload.events) ? approvedPayload.events : []);
+            displayAdminEvents(approvedEvents, approvedEventsList, 'approved');
             reportedEventsList.innerHTML = '<p>Integrazione in corso.</p>';
 
         } catch (error) {
@@ -451,14 +501,19 @@ document.addEventListener('DOMContentLoaded', () => {
 
         events.forEach(event => {
             const eventItem = document.createElement('li');
+            const photos = extractPhotos(event.photos);
+            const thumb = normalizePhotoUrl(photos[0]);
             eventItem.innerHTML = `
-                <span>${event.title}</span>
-                <div class="actions">
-                    ${type === 'pending' ? `
-                        <button data-id="${event.id}" data-action="approve">Accetta</button>
-                        <button data-id="${event.id}" data-action="reject" class="reject">Rifiuta</button>
-                    ` : ''}
-                    <button data-id="${event.id}" data-action="delete" class="delete">Elimina</button>
+                <div class="admin-event-row">
+                    <img class="admin-event-thumb" src="${thumb}" alt="${event.title}">
+                    <span class="admin-event-title">${event.title}</span>
+                    <div class="actions">
+                        ${type === 'pending' ? `
+                            <button data-id="${event.id}" data-action="approve">Accetta</button>
+                            <button data-id="${event.id}" data-action="reject" class="reject">Rifiuta</button>
+                        ` : ''}
+                        <button data-id="${event.id}" data-action="delete" class="delete">Elimina</button>
+                    </div>
                 </div>
             `;
             container.appendChild(eventItem);
@@ -531,9 +586,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const eventCard = document.createElement('div');
             eventCard.className = 'event-card';
 
-            const photos = Array.isArray(event.photos) && event.photos.length > 0 ? event.photos : [
-                'https://via.placeholder.com/600x300?text=Evento'
-            ];
+            const photos = extractPhotos(event.photos);
 
             const carouselId = `carousel-${event.id}`;
             const dateStr = event.event_date ? new Date(event.event_date).toLocaleString() : '';
@@ -541,11 +594,15 @@ document.addEventListener('DOMContentLoaded', () => {
 
             eventCard.innerHTML = `
                 <div class="carousel" id="${carouselId}">
-                    <button class="prev">‹</button>
+                    <button class="prev" aria-label="Precedente">‹</button>
                     <div class="slides">
-                        ${photos.map((url, idx) => `<img class="slide${idx === 0 ? ' active' : ''}" src="${url}" alt="${event.title} - foto ${idx+1}">`).join('')}
+                        ${photos.map((url, idx) => `<img class="slide${idx === 0 ? ' active' : ''}" src="${normalizePhotoUrl(url)}" alt="${event.title} - foto ${idx+1}">`).join('')}
                     </div>
-                    <button class="next">›</button>
+                    <div class="indicators">
+                        ${photos.map((_, idx) => `<button class="indicator-dot${idx === 0 ? ' active' : ''}" data-index="${idx}" aria-label="Vai alla slide ${idx+1}"></button>`).join('')}
+                    </div>
+                    <button class="next" aria-label="Successiva">›</button>
+                    <button class="autoplay-toggle" aria-pressed="true" title="Auto-play">Auto</button>
                 </div>
                 <div class="event-card-content">
                     <h3>${event.title}</h3>
@@ -560,18 +617,68 @@ document.addEventListener('DOMContentLoaded', () => {
             // Carosello handlers
             const carousel = eventCard.querySelector(`#${carouselId}`);
             const slides = carousel.querySelectorAll('.slide');
+            const dots = carousel.querySelectorAll('.indicator-dot');
             let currentIndex = 0;
             const showSlide = (i) => {
                 slides.forEach((img, idx) => img.classList.toggle('active', idx === i));
+                dots.forEach((dot, idx) => dot.classList.toggle('active', idx === i));
             };
+            showSlide(0);
             carousel.querySelector('.prev').addEventListener('click', () => {
                 currentIndex = (currentIndex - 1 + slides.length) % slides.length;
                 showSlide(currentIndex);
+                pauseAutoplayTemporarily();
             });
             carousel.querySelector('.next').addEventListener('click', () => {
                 currentIndex = (currentIndex + 1) % slides.length;
                 showSlide(currentIndex);
+                pauseAutoplayTemporarily();
             });
+            dots.forEach(dot => {
+                dot.addEventListener('click', () => {
+                    const idx = parseInt(dot.getAttribute('data-index'), 10);
+                    currentIndex = Number.isNaN(idx) ? 0 : idx;
+                    showSlide(currentIndex);
+                    pauseAutoplayTemporarily();
+                });
+            });
+            slides.forEach(img => {
+                img.addEventListener('error', () => {
+                    img.src = PLACEHOLDER_PHOTO;
+                    img.classList.add('img-error');
+                });
+                img.addEventListener('click', () => openImageModal(img.src, img.alt));
+            });
+            let autoplayEnabled = true;
+            let autoplayTimer = null;
+            let resumeTimeout = null;
+            const startAutoplay = () => {
+                clearInterval(autoplayTimer);
+                if (!autoplayEnabled) return;
+                autoplayTimer = setInterval(() => {
+                    currentIndex = (currentIndex + 1) % slides.length;
+                    showSlide(currentIndex);
+                }, DEFAULT_AUTOPLAY_MS);
+            };
+            const stopAutoplay = () => {
+                clearInterval(autoplayTimer);
+                autoplayTimer = null;
+            };
+            const pauseAutoplayTemporarily = () => {
+                stopAutoplay();
+                clearTimeout(resumeTimeout);
+                resumeTimeout = setTimeout(() => { if (autoplayEnabled) startAutoplay(); }, 3000);
+            };
+            const toggleBtn = carousel.querySelector('.autoplay-toggle');
+            toggleBtn.addEventListener('click', () => {
+                autoplayEnabled = !autoplayEnabled;
+                toggleBtn.setAttribute('aria-pressed', String(autoplayEnabled));
+                toggleBtn.classList.toggle('on', autoplayEnabled);
+                if (autoplayEnabled) startAutoplay(); else stopAutoplay();
+            });
+            carousel.addEventListener('mouseenter', () => { stopAutoplay(); });
+            carousel.addEventListener('mouseleave', () => { if (autoplayEnabled) startAutoplay(); });
+            startAutoplay();
         });
     }
 
@@ -640,14 +747,10 @@ document.addEventListener('DOMContentLoaded', () => {
         eventsSearch.addEventListener('input', onEventsSearchInput);
     }
 
-    createEventButton.addEventListener('click', (e) => {
+    createEventButton.addEventListener('click', async (e) => {
         e.preventDefault();
-        const token = localStorage.getItem('token');
-        if (!token) {
-            console.warn('Tentativo di accedere a Crea Evento senza autenticazione.');
-            showPage(loginPage);
-            return;
-        }
+        const ok = await ensureAuthenticated();
+        if (!ok) return;
         showPage(createEventPage);
         fetchCategories();
     });
@@ -829,6 +932,12 @@ document.addEventListener('DOMContentLoaded', () => {
         const token = localStorage.getItem('token');
 
         try {
+            const stillAuth = await ensureAuthenticated();
+            if (!stillAuth) {
+                createEventMessage.textContent = 'Sessione scaduta. Accedi di nuovo per creare un evento.';
+                createEventMessage.className = 'error-message';
+                return;
+            }
             // Validazione lato client
             if (!title || !description || !date || !time || !location || !capacity || !category) {
                 createEventMessage.textContent = 'Compila tutti i campi obbligatori.';
@@ -883,11 +992,18 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         } catch (error) {
             console.error('Errore durante la creazione dell\'evento:', error.message || error);
-            createEventMessage.textContent = (error && error.status)
-                ? (error.data?.message || error.data?.error || error.message || 'Errore nella creazione dell\'evento.')
-                : 'Errore di rete. Impossibile creare l\'evento.';
-            createEventMessage.className = 'error-message';
-            showToast(createEventMessage.textContent, 'error');
+            if (error && error.status === 401) {
+                createEventMessage.textContent = 'Sessione scaduta o token non valido. Effettua il login.';
+                createEventMessage.className = 'error-message';
+                showToast(createEventMessage.textContent, 'warn');
+                showPage(loginPage);
+            } else {
+                createEventMessage.textContent = (error && error.status)
+                    ? (error.data?.message || error.data?.error || error.message || 'Errore nella creazione dell\'evento.')
+                    : 'Errore di rete. Impossibile creare l\'evento.';
+                createEventMessage.className = 'error-message';
+                showToast(createEventMessage.textContent, 'error');
+            }
         }
     });
 
