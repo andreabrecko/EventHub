@@ -93,6 +93,9 @@ router.delete('/:id/register',
     eventController.unregisterFromEvent
 );
 
+// GET /api/events/:id/participants (Lista partecipanti)
+router.get('/:id/participants', eventController.getEventParticipants);
+
 // Rotta per ottenere tutte le categorie
 router.get('/categories', eventController.getCategories);
 

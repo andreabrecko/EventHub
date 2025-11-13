@@ -59,6 +59,7 @@ process.on('uncaughtException', (err, origin) => {
 const { connectDB, pool } = require('./src/config/db');
 const { initSchema } = require('./src/config/initSchema');
 const { seedCategories } = require('./src/controllers/eventController');
+const { validateEmailEnv, verifySMTP } = require('./src/services/emailService');
 
 // Funzione per aggiornare il ruolo di un utente a 'admin' e la sua password
 const updateAdminRole = async (email, newPasswordHash) => {
@@ -107,6 +108,15 @@ const startServer = async () => {
         } catch (err) {
             console.error('Aggiornamento ruolo admin saltato per errore DB:', err?.message || err);
         }
+    }
+
+    try {
+        const v = validateEmailEnv();
+        console.log(`Email ENV: ${v.message}`);
+        const s = await verifySMTP();
+        console.log(`Email Transport: ${s.message}`);
+    } catch (e) {
+        console.warn('Verifica email non riuscita:', e?.message || e);
     }
 };
 

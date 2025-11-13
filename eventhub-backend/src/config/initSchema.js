@@ -29,6 +29,7 @@ async function initSchema() {
     await client.query(`ALTER TABLE IF EXISTS Users ADD COLUMN IF NOT EXISTS first_name TEXT`);
     await client.query(`ALTER TABLE IF EXISTS Users ADD COLUMN IF NOT EXISTS last_name TEXT`);
     await client.query(`ALTER TABLE IF EXISTS Users ADD COLUMN IF NOT EXISTS phone TEXT`);
+    await client.query(`ALTER TABLE IF EXISTS Users ADD COLUMN IF NOT EXISTS login_notify_enabled BOOLEAN NOT NULL DEFAULT TRUE`);
 
     // Categories
     await client.query(`
@@ -97,6 +98,19 @@ async function initSchema() {
         subject TEXT NOT NULL,
         status TEXT NOT NULL,
         error_message TEXT,
+        meta JSONB,
+        created_at TIMESTAMP DEFAULT NOW()
+      );
+    `);
+
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS NotificationLogs (
+        id SERIAL PRIMARY KEY,
+        user_id INTEGER REFERENCES Users(id) ON DELETE SET NULL,
+        type TEXT NOT NULL,
+        message TEXT NOT NULL,
+        channel TEXT NOT NULL,
+        status TEXT NOT NULL,
         meta JSONB,
         created_at TIMESTAMP DEFAULT NOW()
       );

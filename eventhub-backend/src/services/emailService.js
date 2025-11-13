@@ -4,28 +4,38 @@ const nodemailer = require('nodemailer');
 const useJsonTransport = process.env.SMTP_JSON_TRANSPORT === 'true';
 const isDryRun = process.env.SMTP_DRY_RUN === 'true';
 
-const transporter = nodemailer.createTransport(
-  useJsonTransport
-    ? { jsonTransport: true }
-    : {
-        host: process.env.SMTP_HOST,
-        port: Number(process.env.SMTP_PORT || 587),
-        secure: process.env.SMTP_SECURE === 'true',
-        auth:
-          process.env.SMTP_USER && process.env.SMTP_PASS
-            ? {
-                user: process.env.SMTP_USER,
-                pass: process.env.SMTP_PASS,
-              }
-            : undefined,
-        // Timeout più brevi per evitare blocchi della richiesta
-        connectionTimeout: Number(process.env.SMTP_CONNECTION_TIMEOUT || 10000), // 10s
-        greetingTimeout: Number(process.env.SMTP_GREETING_TIMEOUT || 8000), // 8s
-        socketTimeout: Number(process.env.SMTP_SOCKET_TIMEOUT || 15000), // 15s
-        tls: process.env.SMTP_TLS_SKIP_VERIFY === 'true' ? { rejectUnauthorized: false } : undefined,
-        pool: false,
-      }
-);
+function buildTransportConfig() {
+  if (useJsonTransport) return { jsonTransport: true };
+  const svc = (process.env.EMAIL_SERVICE || '').toLowerCase();
+  const emailUser = process.env.EMAIL_USER;
+  const emailPass = process.env.EMAIL_PASS;
+  if (svc === 'gmail' && emailUser && emailPass) {
+    return {
+      service: 'gmail',
+      auth: { user: emailUser, pass: emailPass },
+      connectionTimeout: Number(process.env.SMTP_CONNECTION_TIMEOUT || 10000),
+      greetingTimeout: Number(process.env.SMTP_GREETING_TIMEOUT || 8000),
+      socketTimeout: Number(process.env.SMTP_SOCKET_TIMEOUT || 15000),
+      pool: false,
+    };
+  }
+  return {
+    host: process.env.SMTP_HOST,
+    port: Number(process.env.SMTP_PORT || 587),
+    secure: process.env.SMTP_SECURE === 'true',
+    auth:
+      process.env.SMTP_USER && process.env.SMTP_PASS
+        ? { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS }
+        : undefined,
+    connectionTimeout: Number(process.env.SMTP_CONNECTION_TIMEOUT || 10000),
+    greetingTimeout: Number(process.env.SMTP_GREETING_TIMEOUT || 8000),
+    socketTimeout: Number(process.env.SMTP_SOCKET_TIMEOUT || 15000),
+    tls: process.env.SMTP_TLS_SKIP_VERIFY === 'true' ? { rejectUnauthorized: false } : undefined,
+    pool: false,
+  };
+}
+
+const transporter = nodemailer.createTransport(buildTransportConfig());
 
 async function verifySMTP() {
   // Verifica disponibilità del trasporto: in mock/dry-run ritorna sempre ok
@@ -38,6 +48,22 @@ async function verifySMTP() {
   } catch (err) {
     return { ok: false, message: err?.message || String(err) };
   }
+}
+
+function validateEmailEnv() {
+  const svc = (process.env.EMAIL_SERVICE || '').toLowerCase();
+  const emailUser = process.env.EMAIL_USER;
+  const emailPass = process.env.EMAIL_PASS;
+  if (useJsonTransport || isDryRun) return { ok: true, message: 'Email in modalità mock/dry-run' };
+  if (svc === 'gmail') {
+    if (!emailUser || !emailPass) return { ok: false, message: 'EMAIL_USER/PASS mancanti per Gmail' };
+    return { ok: true, message: 'Credenziali Gmail caricate' };
+  }
+  if (process.env.SMTP_HOST) {
+    const hasAuth = process.env.SMTP_USER && process.env.SMTP_PASS;
+    return { ok: true, message: `SMTP configurato${hasAuth ? ' con auth' : ' senza auth'}` };
+  }
+  return { ok: false, message: 'Nessuna configurazione email trovata' };
 }
 
 const queue = [];
@@ -199,7 +225,7 @@ async function sendLoginNotificationEmail({ to, ua, ip, when, pool, userId }) {
   }});
 }
 
-module.exports = { sendVerificationEmail, verifySMTP, sendVerificationCodeEmail, sendLoginNotificationEmail, enqueue };
+module.exports = { sendVerificationEmail, verifySMTP, sendVerificationCodeEmail, sendLoginNotificationEmail, enqueue, validateEmailEnv };
 // File: src/services/emailService.js
 // Servizio SMTP per verifica email utenti.
 // Supporta modalità mock (jsonTransport) e dry-run per sviluppo/sistemi senza SMTP.

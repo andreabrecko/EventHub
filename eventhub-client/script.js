@@ -26,10 +26,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const adminPage = document.getElementById('admin-page');
 
     const registerForm = document.getElementById('register-form');
-    const verifyCodeForm = document.getElementById('verify-code-form');
-    const verifyEmailInput = document.getElementById('verify-email');
-    const verifyCodeInput = document.getElementById('verify-code');
-    const verifyCodeMessage = document.getElementById('verify-code-message');
+    
     const loginForm = document.getElementById('login-form');
     const createEventForm = document.getElementById('create-event-form');
 
@@ -47,7 +44,23 @@ document.addEventListener('DOMContentLoaded', () => {
     const eventDetailDescription = document.getElementById('event-detail-description');
     const eventDetailActions = document.getElementById('event-detail-actions');
     const eventsSearch = document.getElementById('events-search');
+    const topicChips = document.getElementById('topic-chips');
+    const searchButtonEl = document.getElementById('events-search-button');
+    const searchOverlay = document.getElementById('search-modal-overlay');
+    const searchModal = document.getElementById('search-modal');
+    const searchInput = document.getElementById('search-modal-input');
+    const searchSubmit = document.getElementById('search-modal-submit');
+    const searchCancel = document.getElementById('search-modal-cancel');
+    const searchMessage = document.getElementById('search-modal-message');
+    const filterButtonEl = document.getElementById('filter-button');
+    const filtersOverlay = document.getElementById('filters-modal-overlay');
+    const filtersModal = document.getElementById('filters-modal');
+    const filtersList = document.getElementById('filters-list');
+    const filtersApply = document.getElementById('filters-apply');
+    const filtersCancel = document.getElementById('filters-cancel');
+    const filtersMessage = document.getElementById('filters-modal-message');
     let homeEventsCache = [];
+    const eventDomRefs = new Map();
     const eventCategorySelect = document.getElementById('event-category');
 
     // Admin elements (solo per admin dashboard)
@@ -283,6 +296,14 @@ document.addEventListener('DOMContentLoaded', () => {
             welcomeMessage.textContent = `Benvenuto, ${localStorage.getItem('username')}${userRole === 'admin' ? ' (admin)' : ''}`;
             welcomeMessage.style.display = 'block';
             if (loginNotifyToggle) loginNotifyToggle.style.display = 'inline-block';
+            (async () => {
+                try {
+                    const me = await apiRequest('/users/me', { useAuth: true, timeoutMs: 6000 });
+                    if (loginNotifyCheckbox && me && me.user && typeof me.user.login_notify_enabled === 'boolean') {
+                        loginNotifyCheckbox.checked = !!me.user.login_notify_enabled;
+                    }
+                } catch (_) {}
+            })();
         } else {
             // Mostra i link di autenticazione e nascondi l'area utente
             if (authLinks) authLinks.style.display = 'block';
@@ -299,6 +320,106 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Chiamata iniziale per aggiornare l'interfaccia utente all'avvio
     updateAuthUI();
+
+    let currentSearchQuery = '';
+    let selectedCategoryIds = new Set();
+    function openSearch() {
+        if (!searchOverlay) return;
+        searchOverlay.hidden = false;
+        setTimeout(() => { try { searchInput && searchInput.focus(); } catch(_){} }, 10);
+        searchMessage.textContent = '';
+        if (searchInput) searchInput.value = currentSearchQuery || '';
+    }
+    function closeSearch() {
+        if (!searchOverlay) return;
+        searchOverlay.hidden = true;
+        searchMessage.textContent = '';
+    }
+    async function openFilters() {
+        if (!filtersOverlay) return;
+        filtersOverlay.hidden = false;
+        filtersMessage.textContent = '';
+        try {
+            const cats = await apiRequest('/events/categories', { timeoutMs: 6000 });
+            if (!Array.isArray(cats)) return;
+            filtersList.innerHTML = '';
+            cats.forEach(cat => {
+                const idStr = String(cat.id);
+                const label = document.createElement('label');
+                const cb = document.createElement('input');
+                cb.type = 'checkbox';
+                cb.value = idStr;
+                cb.checked = selectedCategoryIds.has(idStr);
+                const span = document.createElement('span');
+                span.textContent = cat.name;
+                label.appendChild(cb);
+                label.appendChild(span);
+                filtersList.appendChild(label);
+            });
+        } catch (e) {
+            filtersMessage.textContent = 'Errore nel caricamento delle categorie.';
+        }
+    }
+    function closeFilters() {
+        if (!filtersOverlay) return;
+        filtersOverlay.hidden = true;
+        filtersMessage.textContent = '';
+    }
+    function applyFiltersSelection() {
+        if (!filtersList) return;
+        const newSet = new Set();
+        filtersList.querySelectorAll('input[type=checkbox]').forEach(cb => {
+            if (cb.checked) newSet.add(String(cb.value));
+        });
+        selectedCategoryIds = newSet;
+        applyEventsFilter();
+        closeFilters();
+    }
+    async function performSearch() {
+        if (!searchInput) return;
+        const q = (searchInput.value || '').trim();
+        searchMessage.textContent = '';
+        if (q.length < 2) {
+            searchMessage.textContent = 'Inserisci almeno 2 caratteri.';
+            return;
+        }
+        try {
+            searchSubmit && searchSubmit.classList.add('loading');
+            currentSearchQuery = q;
+            applyEventsFilter();
+            const count = Array.isArray(homeEventsCache) ? homeEventsCache.filter(ev => {
+                const title = String(ev.title || '').toLowerCase();
+                const desc = String(ev.description || '').toLowerCase();
+                const loc = String(ev.location || '').toLowerCase();
+                const cat = String(ev.category_name || '').toLowerCase();
+                const s = q.toLowerCase();
+                return title.includes(s) || desc.includes(s) || loc.includes(s) || cat.includes(s);
+            }).length : 0;
+            searchMessage.textContent = `${count} risultati`;
+        } catch (err) {
+            const msg = err && err.message ? err.message : 'Errore durante la ricerca.';
+            searchMessage.textContent = msg;
+        } finally {
+            searchSubmit && searchSubmit.classList.remove('loading');
+        }
+    }
+
+    if (searchButtonEl) {
+        searchButtonEl.addEventListener('click', () => {
+            searchButtonEl.classList.add('pulse');
+            setTimeout(() => searchButtonEl.classList.remove('pulse'), 320);
+            openSearch();
+        });
+    }
+    if (searchCancel) searchCancel.addEventListener('click', closeSearch);
+    if (searchSubmit) searchSubmit.addEventListener('click', performSearch);
+    if (searchOverlay) searchOverlay.addEventListener('click', (e) => { if (e.target === searchOverlay) closeSearch(); });
+    if (searchModal) searchModal.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeSearch(); if (e.key === 'Enter') performSearch(); });
+    if (filterButtonEl) filterButtonEl.addEventListener('click', openFilters);
+    if (filtersCancel) filtersCancel.addEventListener('click', closeFilters);
+    if (filtersApply) filtersApply.addEventListener('click', applyFiltersSelection);
+    if (filtersOverlay) filtersOverlay.addEventListener('click', (e) => { if (e.target === filtersOverlay) closeFilters(); });
+    if (filtersModal) filtersModal.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeFilters(); });
 
     if (loginNotifyCheckbox) {
         loginNotifyCheckbox.addEventListener('change', async (e) => {
@@ -317,12 +438,20 @@ document.addEventListener('DOMContentLoaded', () => {
     let socket;
     try {
         if (typeof io !== 'undefined') {
-            socket = io();
+            socket = io('http://localhost:3000');
             socket.on('connect', () => {
                 console.log('Socket connesso');
             });
             socket.on('connect_error', (err) => {
                 console.warn('Errore connessione socket:', err && (err.message || err));
+            });
+            socket.on('userSignup', (payload = {}) => {
+                const msg = payload.message || `Benvenuto ${payload.username || ''}!`;
+                showToast(msg, 'success');
+            });
+            socket.on('userLogin', (payload = {}) => {
+                const msg = payload.message || `Accesso effettuato. Bentornato, ${payload.username || ''}!`;
+                showToast(msg, 'success');
             });
         }
     } catch (e) {
@@ -367,9 +496,10 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
+    let activeCategoryId = null;
     function applyEventsFilter() {
         let filtered = Array.isArray(homeEventsCache) ? [...homeEventsCache] : [];
-        const q = (eventsSearch && eventsSearch.value ? eventsSearch.value : '').trim().toLowerCase();
+        const q = String(currentSearchQuery || (eventsSearch && eventsSearch.value) || '').trim().toLowerCase();
         if (q) {
             filtered = filtered.filter(ev => {
                 const title = String(ev.title || '').toLowerCase();
@@ -378,6 +508,12 @@ document.addEventListener('DOMContentLoaded', () => {
                 const cat = String(ev.category_name || '').toLowerCase();
                 return title.includes(q) || desc.includes(q) || loc.includes(q) || cat.includes(q);
             });
+        }
+        const catIdStr = activeCategoryId ? String(activeCategoryId) : null;
+        if (selectedCategoryIds && selectedCategoryIds.size > 0) {
+            filtered = filtered.filter(ev => selectedCategoryIds.has(String(ev.category_id || ev.categoryId || '')));
+        } else if (catIdStr) {
+            filtered = filtered.filter(ev => String(ev.category_id || ev.categoryId || '') === catIdStr);
         }
         displayEvents(filtered);
     }
@@ -392,6 +528,11 @@ document.addEventListener('DOMContentLoaded', () => {
 
         pageToShow.style.display = 'block';
         currentView = pageToShow.id.replace('-page', '');
+
+        if (searchOverlay) {
+            searchOverlay.hidden = true;
+            if (searchMessage) searchMessage.textContent = '';
+        }
 
         if (pageToShow === adminPage) {
             fetchAdminEvents();
@@ -652,107 +793,74 @@ document.addEventListener('DOMContentLoaded', () => {
         events.forEach(event => {
             const eventCard = document.createElement('div');
             eventCard.className = 'event-card';
-
             const photos = extractPhotos(event.photos);
-
-            const carouselId = `carousel-${event.id}`;
+            const firstPhoto = normalizePhotoUrl(photos[0]);
             const dateStr = event.event_date ? new Date(event.event_date).toLocaleString() : '';
             const categoryName = event.category_name || 'N/A';
+            const count = Number(event.current_registrations || 0);
+            const capacity = Number(event.capacity || 0);
 
             eventCard.innerHTML = `
-                <div class="carousel" id="${carouselId}">
-                    <button class="prev" aria-label="Precedente">‹</button>
-                    <div class="slides">
-                        ${photos.map((url, idx) => `<img class="slide${idx === 0 ? ' active' : ''}" src="${normalizePhotoUrl(url)}" alt="${event.title} - foto ${idx+1}">`).join('')}
-                    </div>
-                    <div class="indicators">
-                        ${photos.map((_, idx) => `<button class="indicator-dot${idx === 0 ? ' active' : ''}" data-index="${idx}" aria-label="Vai alla slide ${idx+1}"></button>`).join('')}
-                    </div>
-                    <button class="next" aria-label="Successiva">›</button>
-                    <button class="autoplay-toggle" aria-pressed="true" title="Auto-play">Auto</button>
+                <div class="card-image">
+                    <img src="${firstPhoto}" alt="${event.title}">
+                    <div class="reg-badge" aria-label="Iscritti" aria-live="polite">${count}${capacity ? '/' + capacity : ''}</div>
                 </div>
                 <div class="event-card-content">
+                    <div class="creator-label">${event.creator_username || ''}</div>
                     <h3>${event.title}</h3>
                     <p class="event-date-time">${dateStr}</p>
                     <p class="event-location">${event.location || ''}</p>
-                    <p>${event.description || ''}</p>
                     <p class="event-category">Categoria: ${categoryName}</p>
                     <div class="event-actions"></div>
+                    <div class="quick-actions"></div>
                 </div>
             `;
             eventsList.appendChild(eventCard);
 
-            // Carosello handlers
-            const carousel = eventCard.querySelector(`#${carouselId}`);
-            const slides = carousel.querySelectorAll('.slide');
-            const dots = carousel.querySelectorAll('.indicator-dot');
-            let currentIndex = 0;
-            const showSlide = (i) => {
-                slides.forEach((img, idx) => img.classList.toggle('active', idx === i));
-                dots.forEach((dot, idx) => dot.classList.toggle('active', idx === i));
-            };
-            showSlide(0);
-            carousel.querySelector('.prev').addEventListener('click', () => {
-                currentIndex = (currentIndex - 1 + slides.length) % slides.length;
-                showSlide(currentIndex);
-                pauseAutoplayTemporarily();
-            });
-            carousel.querySelector('.next').addEventListener('click', () => {
-                currentIndex = (currentIndex + 1) % slides.length;
-                showSlide(currentIndex);
-                pauseAutoplayTemporarily();
-            });
-            dots.forEach(dot => {
-                dot.addEventListener('click', () => {
-                    const idx = parseInt(dot.getAttribute('data-index'), 10);
-                    currentIndex = Number.isNaN(idx) ? 0 : idx;
-                    showSlide(currentIndex);
-                    pauseAutoplayTemporarily();
-                });
-            });
-            slides.forEach(img => {
-                img.addEventListener('error', () => {
-                    img.src = PLACEHOLDER_PHOTO;
-                    img.classList.add('img-error');
-                });
-                img.addEventListener('click', () => openImageModal(img.src, img.alt));
-            });
-            let autoplayEnabled = true;
-            let autoplayTimer = null;
-            let resumeTimeout = null;
-            const startAutoplay = () => {
-                clearInterval(autoplayTimer);
-                if (!autoplayEnabled) return;
-                autoplayTimer = setInterval(() => {
-                    currentIndex = (currentIndex + 1) % slides.length;
-                    showSlide(currentIndex);
-                }, DEFAULT_AUTOPLAY_MS);
-            };
-            const stopAutoplay = () => {
-                clearInterval(autoplayTimer);
-                autoplayTimer = null;
-            };
-            const pauseAutoplayTemporarily = () => {
-                stopAutoplay();
-                clearTimeout(resumeTimeout);
-                resumeTimeout = setTimeout(() => { if (autoplayEnabled) startAutoplay(); }, 3000);
-            };
-            const toggleBtn = carousel.querySelector('.autoplay-toggle');
-            toggleBtn.addEventListener('click', () => {
-                autoplayEnabled = !autoplayEnabled;
-                toggleBtn.setAttribute('aria-pressed', String(autoplayEnabled));
-                toggleBtn.classList.toggle('on', autoplayEnabled);
-                if (autoplayEnabled) startAutoplay(); else stopAutoplay();
-            });
-            carousel.addEventListener('mouseenter', () => { stopAutoplay(); });
-            carousel.addEventListener('mouseleave', () => { if (autoplayEnabled) startAutoplay(); });
-            startAutoplay();
-
             const actions = eventCard.querySelector('.event-actions');
+            const quickActions = eventCard.querySelector('.quick-actions');
+            const badgeEl = eventCard.querySelector('.reg-badge');
+            try { eventDomRefs.set(String(event.id), { badgeEl, count, capacity }); } catch(_){}
             try {
                 const role = localStorage.getItem('role');
                 const hasToken = !!localStorage.getItem('token');
                 if (hasToken && role !== 'admin') {
+                    const currentUsername = localStorage.getItem('username') || '';
+                    const qbtn = document.createElement('button');
+                    qbtn.className = 'quick-register';
+                    qbtn.setAttribute('aria-label', 'Iscriviti rapidamente all\'evento');
+                    let isReg = false;
+                    const updateQBtn = () => { 
+                        qbtn.textContent = isReg ? 'Annulla iscrizione' : 'Iscriviti';
+                        qbtn.setAttribute('aria-label', isReg ? 'Annulla iscrizione' : 'Iscriviti');
+                    };
+                    updateQBtn();
+                    qbtn.addEventListener('click', async (e) => {
+                        e.stopPropagation();
+                        const ok = await ensureAuthenticated();
+                        if (!ok) return;
+                        try {
+                            if (isReg) {
+                                const res = await apiRequest(`/events/${event.id}/register`, { method: 'DELETE', useAuth: true, timeoutMs: 6000, retry: 0 });
+                                isReg = false;
+                                showToast(res.message || 'Iscrizione annullata.', 'success');
+                                const ref = eventDomRefs.get(String(event.id));
+                                if (ref) { ref.count = Math.max(0, (ref.count || 0) - 1); if (ref.badgeEl) ref.badgeEl.textContent = `${ref.count || 0}${ref.capacity ? '/' + ref.capacity : ''}`; }
+                            } else {
+                                const res = await apiRequest(`/events/${event.id}/register`, { method: 'POST', useAuth: true, timeoutMs: 6000, retry: 0 });
+                                isReg = true;
+                                showToast(res.message || 'Iscritto all\'evento.', 'success');
+                                const ref = eventDomRefs.get(String(event.id));
+                                if (ref) { ref.count = (ref.count || 0) + 1; if (ref.badgeEl) ref.badgeEl.textContent = `${ref.count || 0}${ref.capacity ? '/' + ref.capacity : ''}`; }
+                            }
+                        } catch (err) {
+                            if (err && err.status === 409) { isReg = true; updateQBtn(); showToast('Sei già iscritto a questo evento.', 'info'); return; }
+                            if (err && err.status === 404) { isReg = false; updateQBtn(); showToast('Non eri iscritto a questo evento.', 'info'); return; }
+                            const msg = (err && err.status) ? (err.data?.error || err.data?.message || 'Operazione non riuscita.') : 'Errore di rete.';
+                            showToast(msg, 'error');
+                        } finally { updateQBtn(); }
+                    });
+                    quickActions.appendChild(qbtn);
                     const btn = document.createElement('button');
                     btn.className = 'report-btn';
                     btn.textContent = 'Segnala evento';
@@ -767,18 +875,69 @@ document.addEventListener('DOMContentLoaded', () => {
                         }
                     });
                     actions.appendChild(btn);
+                    if (String(event.creator_username || '') === String(currentUsername || '')) {
+                        const delBtn = document.createElement('button');
+                        delBtn.className = 'delete-btn';
+                        delBtn.textContent = 'Elimina evento';
+                        delBtn.addEventListener('click', async (e) => {
+                            e.stopPropagation();
+                            const ok = await ensureAuthenticated();
+                            if (!ok) return;
+                            const confirmDel = window.confirm('Confermi l\'eliminazione di questo evento?');
+                            if (!confirmDel) return;
+                            try {
+                                delBtn.disabled = true; delBtn.classList.add('loading'); delBtn.setAttribute('aria-busy','true');
+                                const res = await apiRequest(`/events/${event.id}`, { method: 'DELETE', useAuth: true, timeoutMs: 8000, retry: 0 });
+                                showToast('Evento eliminato.', 'success');
+                                eventCard.remove();
+                            } catch (err) {
+                                const msg = (err && err.status) ? (err.data?.error || err.data?.message || 'Eliminazione non riuscita.') : 'Errore di rete durante l\'eliminazione.';
+                                showToast(msg, 'error');
+                            } finally {
+                                delBtn.disabled = false; delBtn.classList.remove('loading'); delBtn.removeAttribute('aria-busy');
+                            }
+                        });
+                        actions.appendChild(delBtn);
+                    }
                 }
-                const detailBtn = document.createElement('button');
-                detailBtn.textContent = 'Dettagli';
-                actions.appendChild(detailBtn);
-                detailBtn.addEventListener('click', (e) => { e.stopPropagation(); showEventDetail(event); });
                 eventCard.addEventListener('click', (e) => {
                     const t = e.target;
-                    if (t.closest('.prev') || t.closest('.next') || t.closest('.indicator-dot') || t.closest('.autoplay-toggle') || t.closest('.report-btn')) return;
+                    if (t.closest('.report-btn')) return;
+                    if (t.closest('.quick-register')) return;
                     showEventDetail(event);
                 });
             } catch (_) {}
         });
+    }
+
+    async function renderChips() {
+        try {
+            const cats = await apiRequest('/categories', { method: 'GET', timeoutMs: 6000 });
+            if (!Array.isArray(cats)) return;
+            topicChips.innerHTML = '';
+            const allChip = document.createElement('button');
+            allChip.className = 'chip active';
+            allChip.textContent = 'Tutti';
+            allChip.addEventListener('click', () => {
+                topicChips.querySelectorAll('.chip').forEach(c => c.classList.remove('active'));
+                allChip.classList.add('active');
+                fetchEvents();
+            });
+            topicChips.appendChild(allChip);
+            cats.forEach(cat => {
+                const chip = document.createElement('button');
+                chip.className = 'chip';
+                chip.textContent = cat.name;
+                chip.addEventListener('click', () => {
+                    topicChips.querySelectorAll('.chip').forEach(c => c.classList.remove('active'));
+                    chip.classList.add('active');
+                    fetchEvents({ category_id: cat.id });
+                });
+                topicChips.appendChild(chip);
+            });
+        } catch (e) {
+            console.error('Errore caricamento categorie:', e);
+        }
     }
 
     function displayAdminReports(reports) {
@@ -884,6 +1043,10 @@ document.addEventListener('DOMContentLoaded', () => {
         eventsSearch.addEventListener('input', onEventsSearchInput);
     }
 
+    if (topicChips) {
+        topicChips.style.display = 'none';
+    }
+
     createEventButton.addEventListener('click', async (e) => {
         e.preventDefault();
         const ok = await ensureAuthenticated();
@@ -938,17 +1101,12 @@ document.addEventListener('DOMContentLoaded', () => {
             if (!data.status || (data.status && data.status < 400)) {
                 registerMessage.textContent = data.message;
                 registerMessage.className = 'success-message';
-                lastRegisteredEmail = email;
-                if (resendBtn) {
-                    resendBtn.style.display = 'inline-block';
-                }
-                // Non resetto subito per poter usare il pulsante "Reinvia"
+                showToast(`Benvenuto ${username}!`, 'success');
                 setTimeout(() => {
                     showPage(loginPage);
                     registerMessage.textContent = '';
-                    if (resendBtn) resendBtn.style.display = 'none';
                     registerForm.reset();
-                }, 2000);
+                }, 1200);
             } else {
                 registerMessage.textContent = data.message;
                 registerMessage.className = 'error-message';
@@ -962,57 +1120,9 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
-    if (verifyCodeForm) {
-        verifyCodeForm.addEventListener('submit', async (e) => {
-            e.preventDefault();
-            const email = verifyEmailInput.value.trim();
-            const code = verifyCodeInput.value.trim();
-            verifyCodeMessage.textContent = '';
-            try {
-                const data = await apiRequest('/users/verify-code', { method: 'POST', timeoutMs: 6000, retry: 0, body: { email, code } });
-                showToast(data.message || 'Verifica completata.', 'success');
-                verifyCodeMessage.textContent = data.message || 'Verifica completata.';
-                verifyCodeMessage.className = 'success-message';
-            } catch (err) {
-                const msg = (err && err.status) ? (err.data?.error || err.data?.message || 'Verifica non riuscita.') : 'Errore di rete.';
-                showToast(msg, 'error');
-                verifyCodeMessage.textContent = msg;
-                verifyCodeMessage.className = 'error-message';
-            }
-        });
-    }
+    
 
-    if (resendBtn) {
-        resendBtn.addEventListener('click', async () => {
-            const emailToUse = lastRegisteredEmail || document.getElementById('register-email').value;
-            if (!isValidEmail(emailToUse)) {
-                registerMessage.textContent = 'Email non valida per il reinvio.';
-                registerMessage.className = 'error-message';
-                return;
-            }
-            try {
-                const data = await apiRequest('/users/resend-verification', {
-                    method: 'POST',
-                    timeoutMs: 8000,
-                    retry: 1,
-                    body: { email: emailToUse }
-                });
-                if (!data.status || (data.status && data.status < 400)) {
-                    registerMessage.textContent = data.message || 'Email di verifica reinviata.';
-                    registerMessage.className = 'success-message';
-                } else {
-                    registerMessage.textContent = data.error || data.message || 'Impossibile reinviare l\'email.';
-                    registerMessage.className = 'error-message';
-                }
-            } catch (err) {
-                console.error('Errore reinvio verifica:', err.message || err);
-                registerMessage.textContent = (err && err.status)
-                    ? (err.data?.message || err.data?.error || err.message || 'Impossibile reinviare l\'email.')
-                    : 'Errore di rete nel reinvio.';
-                registerMessage.className = 'error-message';
-            }
-        });
-    }
+    
 
     loginForm.addEventListener('submit', async (e) => {
         e.preventDefault();
@@ -1040,6 +1150,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 // Aggiorna immediatamente l'UI in base all'autenticazione
                 updateAuthUI();
                 loginMessage.textContent = data.message || 'Login effettuato con successo!';
+                showToast(`Bentornato ${data.user?.username || ''}!`, 'success');
                 loginMessage.className = 'success-message';
                 loginForm.reset();
                 // Reindirizza subito alla vista corretta senza delay
@@ -1089,6 +1200,8 @@ document.addEventListener('DOMContentLoaded', () => {
         const token = localStorage.getItem('token');
 
         try {
+            const submitBtn = createEventForm.querySelector('button[type="submit"]');
+            if (submitBtn) { submitBtn.disabled = true; submitBtn.classList.add('loading'); submitBtn.setAttribute('aria-busy','true'); }
             const stillAuth = await ensureAuthenticated();
             if (!stillAuth) {
                 createEventMessage.textContent = 'Sessione scaduta. Accedi di nuovo per creare un evento.';
@@ -1161,6 +1274,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 createEventMessage.className = 'error-message';
                 showToast(createEventMessage.textContent, 'error');
             }
+        } finally {
+            const submitBtn = createEventForm.querySelector('button[type="submit"]');
+            if (submitBtn) { submitBtn.disabled = false; submitBtn.classList.remove('loading'); submitBtn.removeAttribute('aria-busy'); }
         }
     });
 
@@ -1181,8 +1297,7 @@ document.addEventListener('DOMContentLoaded', () => {
     } else {
         showPage(homePage);
     }
-});
-    function showEventDetail(ev) {
+    async function showEventDetail(ev) {
         const photos = extractPhotos(ev.photos);
         eventDetailCarousel.innerHTML = `
             <div class="carousel">
@@ -1205,22 +1320,87 @@ document.addEventListener('DOMContentLoaded', () => {
         const token = localStorage.getItem('token');
         const role = localStorage.getItem('role');
         if (token && role !== 'admin') {
+            const currentUsername = localStorage.getItem('username') || '';
+            let isRegistered = null;
+            const regBtn = document.createElement('button');
+            regBtn.className = 'register-btn';
+            const updateRegBtn = () => { 
+                regBtn.textContent = isRegistered ? 'Annulla iscrizione' : 'Iscriviti all\'evento';
+                regBtn.setAttribute('aria-label', isRegistered ? 'Annulla iscrizione' : 'Iscriviti all\'evento');
+            };
+            updateRegBtn();
+            regBtn.addEventListener('click', async () => {
+                const ok = await ensureAuthenticated();
+                if (!ok) return;
+                try {
+                    regBtn.disabled = true; regBtn.classList.add('loading'); regBtn.setAttribute('aria-busy','true');
+                    if (isRegistered) {
+                        const res = await apiRequest(`/events/${ev.id}/register`, { method: 'DELETE', useAuth: true, timeoutMs: 6000, retry: 0 });
+                        isRegistered = false;
+                        showToast(res.message || 'Iscrizione annullata.', 'success');
+                    } else {
+                        const res = await apiRequest(`/events/${ev.id}/register`, { method: 'POST', useAuth: true, timeoutMs: 6000, retry: 0 });
+                        isRegistered = true;
+                        showToast(res.message || 'Iscritto all\'evento.', 'success');
+                    }
+                } catch (err) {
+                    if (err && err.status === 409) { isRegistered = true; updateRegBtn(); showToast('Sei già iscritto a questo evento.', 'info'); return; }
+                    if (err && err.status === 404) { isRegistered = false; updateRegBtn(); showToast('Non eri iscritto a questo evento.', 'info'); return; }
+                    const msg = (err && err.status) ? (err.data?.error || err.data?.message || 'Operazione non riuscita.') : 'Errore di rete.';
+                    showToast(msg, 'error');
+                } finally {
+                    updateRegBtn();
+                    regBtn.disabled = false; regBtn.classList.remove('loading'); regBtn.removeAttribute('aria-busy');
+                }
+            });
+            const moreActionsEl = document.getElementById('event-detail-more-actions');
+            if (moreActionsEl) { moreActionsEl.innerHTML = ''; moreActionsEl.appendChild(regBtn); }
+            else { eventDetailActions.appendChild(regBtn); }
             const btn = document.createElement('button');
             btn.className = 'report-btn';
             btn.textContent = 'Segnala evento';
             btn.addEventListener('click', async () => {
                 const reason = window.prompt('Motivo della segnalazione (facoltativo):') || '';
                 try {
+                    btn.disabled = true; btn.classList.add('loading'); btn.setAttribute('aria-busy','true');
                     const res = await apiRequest(`/events/${ev.id}/report`, { method: 'POST', useAuth: true, timeoutMs: 6000, retry: 0, body: { reason } });
                     showToast(res.message || 'Segnalazione inviata.', 'success');
                 } catch (err) {
                     const msg = (err && err.status) ? (err.data?.error || err.data?.message || 'Segnalazione non riuscita.') : 'Errore di rete durante la segnalazione.';
                     showToast(msg, 'error');
-                }
+                } finally { btn.disabled = false; btn.classList.remove('loading'); btn.removeAttribute('aria-busy'); }
             });
             eventDetailActions.appendChild(btn);
+            if (String(ev.creator_username || '') === String(currentUsername || '')) {
+                const delBtn = document.createElement('button');
+                delBtn.className = 'delete-btn';
+                delBtn.textContent = 'Elimina evento';
+                delBtn.addEventListener('click', async () => {
+                    const ok = await ensureAuthenticated();
+                    if (!ok) return;
+                    const confirmDel = window.confirm('Confermi l\'eliminazione di questo evento?');
+                    if (!confirmDel) return;
+                    try {
+                        delBtn.disabled = true; delBtn.classList.add('loading'); delBtn.setAttribute('aria-busy','true');
+                        const res = await apiRequest(`/events/${ev.id}`, { method: 'DELETE', useAuth: true, timeoutMs: 8000, retry: 0 });
+                        showToast('Evento eliminato.', 'success');
+                        showPage(homePage);
+                        fetchEvents();
+                    } catch (err) {
+                        const msg = (err && err.status) ? (err.data?.error || err.data?.message || 'Eliminazione non riuscita.') : 'Errore di rete durante l\'eliminazione.';
+                        showToast(msg, 'error');
+                    } finally {
+                        delBtn.disabled = false; delBtn.classList.remove('loading'); delBtn.removeAttribute('aria-busy');
+                    }
+                });
+                eventDetailActions.appendChild(delBtn);
+            }
         }
         showPage(eventDetailPage);
+        const participantsSummary = document.getElementById('event-detail-participants-summary');
+        const participantsList = document.getElementById('event-detail-participants-list');
+        const addressEl = document.getElementById('event-detail-address');
+        const mapEl = document.getElementById('event-detail-map');
         const carousel = eventDetailCarousel.querySelector('.carousel');
         const slides = carousel.querySelectorAll('.slide');
         const dots = carousel.querySelectorAll('.indicator-dot');
@@ -1233,7 +1413,63 @@ document.addEventListener('DOMContentLoaded', () => {
         carousel.querySelector('.prev').addEventListener('click', () => { currentIndex = (currentIndex - 1 + slides.length) % slides.length; showSlide(currentIndex); });
         carousel.querySelector('.next').addEventListener('click', () => { currentIndex = (currentIndex + 1) % slides.length; showSlide(currentIndex); });
         dots.forEach(dot => { dot.addEventListener('click', () => { const idx = parseInt(dot.getAttribute('data-index'), 10); currentIndex = Number.isNaN(idx) ? 0 : idx; showSlide(currentIndex); }); });
-        slides.forEach(img => { img.addEventListener('error', () => { img.src = PLACEHOLDER_PHOTO; img.classList.add('img-error'); }); img.addEventListener('click', () => openImageModal(img.src, img.alt)); });
+        slides.forEach(img => { img.addEventListener('error', () => { img.src = PLACEHOLDER_PHOTO; img.classList.add('img-error'); }); });
+        const minP = Number(ev.min_participants || ev.minParticipants || 0);
+        const maxP = Number(ev.max_participants || ev.capacity || ev.maxParticipants || 0);
+        const initialCount = Number(ev.current_registrations || 0);
+        if (participantsSummary) participantsSummary.textContent = `Iscritti: ${initialCount}${maxP ? '/' + maxP : ''}  •  Min: ${minP || 0}  •  Max: ${maxP || 'N/D'}`;
+        if (addressEl) addressEl.textContent = ev.location || '';
+        if (mapEl) {
+            if (ev.location) {
+                const q = encodeURIComponent(ev.location);
+                mapEl.innerHTML = `<iframe title="Mappa" src="https://maps.google.com/maps?q=${q}&output=embed" loading="lazy"></iframe>`;
+            } else { mapEl.innerHTML = ''; }
+        }
+        if (participantsList) {
+            participantsList.innerHTML = '';
+            try {
+                const plist = await apiRequest(`/events/${ev.id}/participants`, { timeoutMs: 6000 });
+                if (plist && Array.isArray(plist.participants)) {
+                    plist.participants.forEach(p => {
+                        const li = document.createElement('li');
+                        li.textContent = p.username;
+                        participantsList.appendChild(li);
+                    });
+                    if (participantsSummary) participantsSummary.textContent = `Iscritti: ${plist.count}${maxP ? '/' + maxP : ''}  •  Min: ${minP || 0}  •  Max: ${maxP || 'N/D'}`;
+                }
+            } catch (_) {}
+        }
+        if (socket) {
+            try {
+                const userId = localStorage.getItem('userId');
+                socket.emit('joinEventChat', { eventId: ev.id, userId });
+                socket.off('registrationChange');
+                socket.on('registrationChange', (payload = {}) => {
+                    if (String(payload.eventId) !== String(ev.id)) return;
+                    const isReg = payload.action === 'registered';
+                    let current = initialCount;
+                    if (participantsSummary) {
+                        const text = participantsSummary.textContent || '';
+                        const m = text.match(/Iscritti: (\d+)/);
+                        if (m) current = Number(m[1] || initialCount);
+                    }
+                    current = current + (isReg ? 1 : -1);
+                    if (current < 0) current = 0;
+                    if (participantsSummary) participantsSummary.textContent = `Iscritti: ${current}${maxP ? '/' + maxP : ''}  •  Min: ${minP || 0}  •  Max: ${maxP || 'N/D'}`;
+                    if (participantsList && payload.username) {
+                        if (isReg) {
+                            const li = document.createElement('li');
+                            li.textContent = payload.username;
+                            participantsList.appendChild(li);
+                        } else {
+                            const items = Array.from(participantsList.querySelectorAll('li'));
+                            const found = items.find(li => li.textContent === payload.username);
+                            if (found) found.remove();
+                        }
+                    }
+                });
+            } catch (_) {}
+        }
     }
 
     {
@@ -1245,3 +1481,4 @@ document.addEventListener('DOMContentLoaded', () => {
             });
         }
     }
+});

@@ -9,7 +9,11 @@
 <body>
     <nav class="navbar">
         <div class="navbar-left">
-            <a href="#" id="home-link">EventHub</a>
+            <button id="menu-button" class="menu-button" aria-label="Menu"><span></span></button>
+            <a href="#" id="home-link" class="logo">
+                <span class="logo-text">Event</span>
+                <span class="logo-hub">hub</span>
+            </a>
         </div>
         <div class="navbar-right">
             <div id="auth-links">
@@ -29,10 +33,34 @@
 
     <div class="container">
         <div id="home-page" class="page">
-            <h1>Home Page</h1>
-            <p>Welcome to the EventHub!</p>
-            <div class="events-filters" style="display:flex; gap:12px; align-items:center; margin:8px 0 16px;">
-                <input type="text" id="events-search" placeholder="Cerca eventi (titolo, descrizione, luogo, categoria)" style="flex:1; padding:0.5em;">
+            <h1>I migliori eventi di oggi</h1>
+            <div class="top-actions">
+                <button id="filter-button" class="filter-button">Filtra</button>
+                <button id="events-search-button" class="search-button" aria-label="Cerca"></button>
+            </div>
+            <div id="topic-chips" class="chips-row" aria-label="Filtri rapidi" style="display:none;"></div>
+            <div id="search-modal-overlay" class="search-modal-overlay" hidden>
+                <div id="search-modal" class="search-modal" role="dialog" aria-modal="true" aria-labelledby="search-modal-title">
+                    <h2 id="search-modal-title">Cerca eventi</h2>
+                    <p class="search-help">Inserisci titolo, descrizione, luogo o categoria.</p>
+                    <input type="text" id="search-modal-input" placeholder="Es. Torino, concerto, arte" aria-label="Termine di ricerca" />
+                    <div class="search-modal-actions">
+                        <button id="search-modal-submit" class="search-submit">Cerca</button>
+                        <button id="search-modal-cancel" class="search-cancel">Chiudi</button>
+                    </div>
+                    <p id="search-modal-message" class="search-message" aria-live="polite"></p>
+                </div>
+            </div>
+            <div id="filters-modal-overlay" class="filters-modal-overlay" hidden>
+                <div id="filters-modal" class="filters-modal" role="dialog" aria-modal="true" aria-labelledby="filters-modal-title">
+                    <h2 id="filters-modal-title">Filtra per categorie</h2>
+                    <div id="filters-list" class="filters-list"></div>
+                    <div class="filters-modal-actions">
+                        <button id="filters-apply" class="filters-apply">Applica</button>
+                        <button id="filters-cancel" class="filters-cancel">Chiudi</button>
+                    </div>
+                    <p id="filters-modal-message" class="filters-message" aria-live="polite"></p>
+                </div>
             </div>
             <div id="events-list" class="event-grid"></div>
         </div>
@@ -47,6 +75,22 @@
                 <p id="event-detail-category"></p>
                 <p id="event-detail-description"></p>
                 <div id="event-detail-actions"></div>
+                <section id="event-detail-extra" aria-label="Maggiori informazioni">
+                    <h3>Maggiori informazioni</h3>
+                    <div class="detail-grid">
+                        <div>
+                            <h4>Partecipanti</h4>
+                            <p id="event-detail-participants-summary"></p>
+                            <ul id="event-detail-participants-list" class="participants-list"></ul>
+                        </div>
+                        <div>
+                            <h4>Luogo</h4>
+                            <p id="event-detail-address"></p>
+                            <div id="event-detail-map" class="map-embed"></div>
+                        </div>
+                    </div>
+                    <div id="event-detail-more-actions" class="more-actions"></div>
+                </section>
             </div>
         </div>
 
@@ -59,18 +103,8 @@
                 <small class="hint" style="display:block; margin-top:4px;">Requisiti password: almeno 8 caratteri, maiuscola, minuscola, numero e simbolo.</small>
                 <button type="submit">Registrati</button>
                 <p id="register-message"></p>
-                <button type="button" id="resend-verify-btn" style="display:none; margin-top:8px;">Reinvia email di verifica</button>
             </form>
-            <p class="hint">Dopo la registrazione riceverai un’email di conferma.</p>
-            <div style="margin-top:16px;">
-                <h2>Verifica con codice</h2>
-                <form id="verify-code-form" style="display:flex; gap:8px; align-items:center;">
-                    <input type="email" id="verify-email" placeholder="Email" required>
-                    <input type="text" id="verify-code" placeholder="Codice" required>
-                    <button type="submit">Verifica</button>
-                </form>
-                <p id="verify-code-message"></p>
-            </div>
+            
         </div>
 
         <div id="login-page" class="page" style="display: none;">
@@ -153,7 +187,7 @@
         </div>
     </div>
 
-    <script src="/socket.io/socket.io.js"></script>
+    <script src="http://localhost:3000/socket.io/socket.io.js"></script>
     <script src="script.js"></script>
 </body>
 </html>

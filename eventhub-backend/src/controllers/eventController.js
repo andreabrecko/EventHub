@@ -402,25 +402,26 @@ const deleteEvent = async (req, res) => {
     const { id: userId } = req.user; 
 
     try {
-        // 1. Autorizzazione: verifica che l'utente sia il creatore
         const colsRes = await pool.query("SELECT column_name FROM information_schema.columns WHERE table_name = 'events'");
         const cols = colsRes.rows.map(r => String(r.column_name).toLowerCase());
         const ownerCol = cols.includes('user_id') ? 'user_id' : (cols.includes('creator_id') ? 'creator_id' : 'user_id');
-        const checkQuery = `SELECT ${ownerCol} AS owner_id FROM Events WHERE id = $1`;
+        const checkQuery = `SELECT ${ownerCol} AS owner_id, title FROM Events WHERE id = $1`;
         const checkResult = await pool.query(checkQuery, [eventId]);
 
         if (checkResult.rows.length === 0) {
+            try { await pool.query('INSERT INTO NotificationLogs (user_id, type, message, channel, status, meta) VALUES ($1,$2,$3,$4,$5,$6)', [userId, 'event_delete', 'Tentativo eliminazione su evento inesistente', 'api', 'not_found', JSON.stringify({ eventId })]); } catch (_) {}
             return res.status(404).json({ error: 'Evento non trovato.' });
         }
         if (checkResult.rows[0].owner_id !== userId) {
+            try { await pool.query('INSERT INTO NotificationLogs (user_id, type, message, channel, status, meta) VALUES ($1,$2,$3,$4,$5,$6)', [userId, 'event_delete', 'Eliminazione non autorizzata', 'api', 'denied', JSON.stringify({ eventId })]); } catch (_) {}
             return res.status(403).json({ error: 'Non sei autorizzato a cancellare questo evento.' });
         }
 
-        // 2. Esegue la cancellazione
         const deleteQuery = 'DELETE FROM Events WHERE id = $1 RETURNING id';
         await pool.query(deleteQuery, [eventId]);
 
-        res.status(204).send(); // 204 No Content
+        try { await pool.query('INSERT INTO NotificationLogs (user_id, type, message, channel, status, meta) VALUES ($1,$2,$3,$4,$5,$6)', [userId, 'event_delete', `Evento '${checkResult.rows[0].title}' eliminato dal creatore`, 'api', 'success', JSON.stringify({ eventId })]); } catch (_) {}
+        res.status(204).send();
 
     } catch (err) {
         console.error("Errore cancellazione evento:", err);
@@ -480,6 +481,7 @@ const registerForEvent = async (req, res) => {
                 action: 'registered',
                 message: `🎉 Nuova iscrizione! ${username} si è unito/a.` 
             });
+            io.emit('registrationChangeGlobal', { eventId: event_id, userId: user_id, username: username || 'Utente', action: 'registered' });
         }
     } catch (err) {
         console.error("Errore iscrizione evento:", err);
@@ -512,6 +514,7 @@ const unregisterFromEvent = async (req, res) => {
                 action: 'unregistered',
                 message: `❌ ${username} ha annullato l'iscrizione.`
             });
+            io.emit('registrationChangeGlobal', { eventId: event_id, userId: user_id, username: username || 'Utente', action: 'unregistered' });
         }
 
     } catch (err) {
@@ -621,8 +624,27 @@ module.exports = {
     deleteEvent,
     registerForEvent,
     unregisterFromEvent,
+    getEventParticipants,
     addCategory,
     getCategories,
     seedCategories,
     reportEvent
 };
+
+// --- B.6 Lista partecipanti evento (Pubblica)
+function getEventParticipants(req, res) {
+    const { id: eventId } = req.params;
+    pool.query(
+        `SELECT u.id, u.username
+             FROM Registrations r
+             JOIN Users u ON u.id = r.user_id
+             WHERE r.event_id = $1
+             ORDER BY u.username ASC`,
+        [eventId]
+    ).then(r => {
+        return res.status(200).json({ count: r.rows.length, participants: r.rows });
+    }).catch(err => {
+        console.error('Errore recupero partecipanti:', err?.message || err);
+        return res.status(500).json({ error: 'Errore interno del server.' });
+    });
+}
