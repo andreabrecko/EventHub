@@ -82,6 +82,18 @@ async function initSchema() {
       );
     `);
 
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS ReportedEvents (
+        id SERIAL PRIMARY KEY,
+        event_id INTEGER NOT NULL REFERENCES Events(id) ON DELETE CASCADE,
+        reporter_id INTEGER NOT NULL REFERENCES Users(id) ON DELETE CASCADE,
+        reason TEXT,
+        status TEXT NOT NULL DEFAULT 'pending',
+        created_at TIMESTAMP DEFAULT NOW(),
+        UNIQUE (event_id, reporter_id)
+      );
+    `);
+
     await client.query('COMMIT');
     console.log('✅ Schema DB inizializzato/validato con successo.');
   } catch (err) {

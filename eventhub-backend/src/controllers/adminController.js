@@ -156,3 +156,61 @@ exports.getAllUsers = async (req, res) => {
         res.status(500).json({ error: 'Errore interno del server.' });
     }
 };
+
+// --- D.6 Gestione Segnalazioni ---
+exports.getReportedEvents = async (req, res) => {
+    try {
+        const result = await pool.query(`
+            SELECT re.id AS report_id,
+                   re.reason,
+                   re.status,
+                   re.created_at,
+                   e.id AS event_id,
+                   e.title,
+                   e.description,
+                   e.event_date,
+                   e.location,
+                   u.username AS reporter_username,
+                   COALESCE(p.photos, '[]'::json) AS photos
+            FROM ReportedEvents re
+            JOIN Events e ON re.event_id = e.id
+            JOIN Users u ON re.reporter_id = u.id
+            LEFT JOIN LATERAL (
+                SELECT json_agg(ep.file_path) AS photos
+                FROM EventPhotos ep
+                WHERE ep.event_id = e.id
+            ) p ON TRUE
+            ORDER BY re.created_at DESC;
+        `);
+        res.status(200).json({ count: result.rows.length, reports: result.rows });
+    } catch (err) {
+        console.error('Errore recupero segnalazioni:', err?.message || err);
+        res.status(500).json({ error: 'Errore interno del server.' });
+    }
+};
+
+exports.resolveReport = async (req, res) => {
+    const { id: reportId } = req.params;
+    const { action } = req.body || {}; // 'remove' | 'keep'
+    if (!['remove','keep'].includes(String(action))) {
+        return res.status(400).json({ error: 'Azione non valida. Usa remove o keep.' });
+    }
+    try {
+        const rep = await pool.query('SELECT id, event_id FROM ReportedEvents WHERE id = $1', [reportId]);
+        if (rep.rows.length === 0) {
+            return res.status(404).json({ error: 'Segnalazione non trovata.' });
+        }
+        const eventId = rep.rows[0].event_id;
+        if (action === 'remove') {
+            await pool.query('DELETE FROM Events WHERE id = $1', [eventId]);
+            await pool.query('UPDATE ReportedEvents SET status = $1 WHERE id = $2', ['removed', reportId]);
+            return res.status(200).json({ message: 'Evento eliminato e segnalazione chiusa.', status: 'removed' });
+        } else {
+            await pool.query('UPDATE ReportedEvents SET status = $1 WHERE id = $2', ['kept', reportId]);
+            return res.status(200).json({ message: 'Evento mantenuto. Segnalazione aggiornata.', status: 'kept' });
+        }
+    } catch (err) {
+        console.error('Errore risoluzione segnalazione:', err?.message || err);
+        res.status(500).json({ error: 'Errore interno del server.' });
+    }
+};

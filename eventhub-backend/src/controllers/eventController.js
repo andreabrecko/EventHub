@@ -583,6 +583,37 @@ const seedCategories = async () => {
     }
 };
 
+const reportEvent = async (req, res) => {
+    const { id: eventId } = req.params;
+    const { id: reporterId } = req.user;
+    const { reason } = req.body || {};
+    try {
+        const evCheck = await pool.query('SELECT id FROM Events WHERE id = $1', [eventId]);
+        if (evCheck.rows.length === 0) {
+            return res.status(404).json({ error: 'Evento non trovato.' });
+        }
+        await pool.query(`
+            CREATE TABLE IF NOT EXISTS ReportedEvents (
+                id SERIAL PRIMARY KEY,
+                event_id INTEGER NOT NULL REFERENCES Events(id) ON DELETE CASCADE,
+                reporter_id INTEGER NOT NULL REFERENCES Users(id) ON DELETE CASCADE,
+                reason TEXT,
+                status TEXT NOT NULL DEFAULT 'pending',
+                created_at TIMESTAMP DEFAULT NOW(),
+                UNIQUE (event_id, reporter_id)
+            );
+        `);
+        const ins = await pool.query(
+            "INSERT INTO ReportedEvents (event_id, reporter_id, reason) VALUES ($1,$2,$3) ON CONFLICT (event_id, reporter_id) DO UPDATE SET reason = EXCLUDED.reason, status = 'pending' RETURNING id",
+            [eventId, reporterId, reason || null]
+        );
+        res.status(201).json({ message: 'Segnalazione inviata.', report_id: ins.rows[0].id });
+    } catch (err) {
+        console.error('Errore segnalazione evento:', err?.message || err);
+        res.status(500).json({ error: 'Errore interno del server.' });
+    }
+};
+
 module.exports = {
     createEvent,
     getEvents,
@@ -592,5 +623,6 @@ module.exports = {
     unregisterFromEvent,
     addCategory,
     getCategories,
-    seedCategories // Export the new function
+    seedCategories,
+    reportEvent
 };

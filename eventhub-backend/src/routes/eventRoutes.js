@@ -61,6 +61,12 @@ router.post('/',
     eventController.createEvent
 );
 
+// POST /api/events/:id/report (Segnalazione Evento)
+router.post('/:id/report',
+    authMiddleware.protect,
+    eventController.reportEvent
+);
+
 // Rotte protette per Modifica/Cancellazione
 // PATCH /api/events/:id (Modifica Evento)
 router.patch('/:id', 

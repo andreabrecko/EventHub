@@ -378,7 +378,9 @@ document.addEventListener('DOMContentLoaded', () => {
             const approvedPayload = await apiRequest('/events', { timeoutMs: 6000, retry: 1 });
             const approvedEvents = Array.isArray(approvedPayload) ? approvedPayload : (Array.isArray(approvedPayload.events) ? approvedPayload.events : []);
             displayAdminEvents(approvedEvents, approvedEventsList, 'approved');
-            reportedEventsList.innerHTML = '<p>Integrazione in corso.</p>';
+            const reportsPayload = await apiRequest('/admin/reports', { useAuth: true, timeoutMs: 6000, retry: 1 });
+            const reports = Array.isArray(reportsPayload) ? reportsPayload : (Array.isArray(reportsPayload.reports) ? reportsPayload.reports : []);
+            displayAdminReports(reports);
 
         } catch (error) {
             console.error('Errore nel recupero degli eventi admin:', error.message || error);
@@ -610,6 +612,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     <p class="event-location">${event.location || ''}</p>
                     <p>${event.description || ''}</p>
                     <p class="event-category">Categoria: ${categoryName}</p>
+                    <div class="event-actions"></div>
                 </div>
             `;
             eventsList.appendChild(eventCard);
@@ -679,6 +682,66 @@ document.addEventListener('DOMContentLoaded', () => {
             carousel.addEventListener('mouseenter', () => { stopAutoplay(); });
             carousel.addEventListener('mouseleave', () => { if (autoplayEnabled) startAutoplay(); });
             startAutoplay();
+
+            const actions = eventCard.querySelector('.event-actions');
+            try {
+                const role = localStorage.getItem('role');
+                const hasToken = !!localStorage.getItem('token');
+                if (hasToken && role !== 'admin') {
+                    const btn = document.createElement('button');
+                    btn.className = 'report-btn';
+                    btn.textContent = 'Segnala evento';
+                    btn.addEventListener('click', async () => {
+                        const reason = window.prompt('Motivo della segnalazione (facoltativo):') || '';
+                        try {
+                            const res = await apiRequest(`/events/${event.id}/report`, { method: 'POST', useAuth: true, timeoutMs: 6000, retry: 0, body: { reason } });
+                            showToast(res.message || 'Segnalazione inviata.', 'success');
+                        } catch (err) {
+                            const msg = (err && err.status) ? (err.data?.error || err.data?.message || 'Segnalazione non riuscita.') : 'Errore di rete durante la segnalazione.';
+                            showToast(msg, 'error');
+                        }
+                    });
+                    actions.appendChild(btn);
+                }
+            } catch (_) {}
+        });
+    }
+
+    function displayAdminReports(reports) {
+        reportedEventsList.innerHTML = '';
+        if (!Array.isArray(reports) || reports.length === 0) {
+            reportedEventsList.innerHTML = '<p>Nessuna segnalazione.</p>';
+            return;
+        }
+        reports.forEach(r => {
+            const li = document.createElement('li');
+            const photos = extractPhotos(r.photos);
+            const thumb = normalizePhotoUrl(photos[0]);
+            li.innerHTML = `
+                <div class="admin-event-row">
+                    <img class="admin-event-thumb" src="${thumb}" alt="${r.title}">
+                    <span class="admin-event-title">${r.title} — segnalato da ${r.reporter_username}</span>
+                    <div class="actions">
+                        <button data-id="${r.report_id}" data-action="remove" class="delete">Elimina</button>
+                        <button data-id="${r.report_id}" data-action="keep" class="reject">Mantieni</button>
+                    </div>
+                </div>
+            `;
+            reportedEventsList.appendChild(li);
+        });
+        reportedEventsList.querySelectorAll('button').forEach(btn => {
+            btn.addEventListener('click', async (e) => {
+                const id = e.target.dataset.id;
+                const action = e.target.dataset.action;
+                try {
+                    const res = await apiRequest(`/admin/reports/${id}`, { method: 'PATCH', useAuth: true, timeoutMs: 8000, retry: 0, body: { action } });
+                    showToast(res.message || 'Operazione completata.', 'success');
+                    fetchAdminEvents();
+                } catch (err) {
+                    const msg = (err && err.status) ? (err.data?.error || err.data?.message || 'Operazione non riuscita.') : 'Errore di rete.';
+                    showToast(msg, 'error');
+                }
+            });
         });
     }
 

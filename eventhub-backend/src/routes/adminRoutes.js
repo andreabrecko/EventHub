@@ -27,4 +27,8 @@ router.delete('/events/:id', adminController.deleteEventAdmin);
 // Rotta per ottenere tutti gli utenti (GET /api/admin/users)
 router.get('/users', adminController.getAllUsers);
 
+// Rotte per gestire segnalazioni
+router.get('/reports', adminController.getReportedEvents);
+router.patch('/reports/:id', adminController.resolveReport);
+
 module.exports = router;
