@@ -20,7 +20,7 @@ const isUsernameAllowed = (username) => {
 
 // --- Registrazione Utente (POST /api/users/register) ---
 const crypto = require('crypto');
-const { sendVerificationEmail } = require('../services/emailService');
+const { sendVerificationEmail, sendVerificationCodeEmail } = require('../services/emailService');
 
 // Registra un nuovo utente, valida input, cifra la password e opzionalmente invia email di verifica.
 exports.registerUser = async (req, res) => {
@@ -54,22 +54,21 @@ exports.registerUser = async (req, res) => {
 
         const colsRes = await pool.query("SELECT column_name FROM information_schema.columns WHERE table_name = 'users'");
         const cols = colsRes.rows.map(r => String(r.column_name).toLowerCase());
-        const hasVerify = cols.includes('verification_token') && cols.includes('verification_token_expires');
-        if (hasVerify) {
+        const hasToken = cols.includes('verification_token') && cols.includes('verification_token_expires');
+        const hasCode = cols.includes('verification_code') && cols.includes('verification_code_expires');
+        if (hasToken) {
             const token = crypto.randomBytes(32).toString('hex');
             const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
-            await pool.query(
-                'UPDATE Users SET verification_token = $1, verification_token_expires = $2 WHERE id = $3',
-                [token, expiresAt, newUser.id]
-            );
-            try {
-                Promise.resolve()
-                    .then(() => sendVerificationEmail({ to: newUser.email, token }))
-                    .then(() => console.log('Email di verifica inviata a', newUser.email))
-                    .catch(mailErr => console.error('Errore invio email di verifica:', mailErr));
-            } catch (mailErr) {
-                console.error('Errore invio email di verifica (sync):', mailErr);
-            }
+            await pool.query('UPDATE Users SET verification_token = $1, verification_token_expires = $2 WHERE id = $3', [token, expiresAt, newUser.id]);
+            Promise.resolve().then(() => sendVerificationEmail({ to: newUser.email, token, pool, userId: newUser.id })).catch(mailErr => console.error('Errore invio email di verifica:', mailErr));
+        }
+        if (hasCode) {
+            const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789abcdefghjkmnpqrstuvwxyz';
+            let code = '';
+            for (let i = 0; i < 8; i++) code += alphabet[Math.floor(Math.random() * alphabet.length)];
+            const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
+            await pool.query('UPDATE Users SET verification_code = $1, verification_code_expires = $2 WHERE id = $3', [code, expiresAt, newUser.id]);
+            Promise.resolve().then(() => sendVerificationCodeEmail({ to: newUser.email, code, pool, userId: newUser.id })).catch(mailErr => console.error('Errore invio codice verifica:', mailErr));
         }
 
         res.status(201).json({
@@ -114,6 +113,20 @@ exports.loginUser = async (req, res) => {
 
         // 3. Genera il JWT
         const token = jwt.sign({ id: user.id, role: user.role }, process.env.JWT_SECRET, { expiresIn: '24h' });
+
+        const ua = String(req.headers['user-agent'] || '');
+        const ip = String(req.headers['x-forwarded-for'] || req.ip || req.connection?.remoteAddress || '');
+        try {
+            const colsRes = await pool.query("SELECT column_name FROM information_schema.columns WHERE table_name = 'users'");
+            const cols = colsRes.rows.map(r => String(r.column_name).toLowerCase());
+            const notifyEnabled = cols.includes('login_notify_enabled') ? user.login_notify_enabled !== false : true;
+            if (notifyEnabled) {
+                const { sendLoginNotificationEmail } = require('../services/emailService');
+                Promise.resolve().then(() => sendLoginNotificationEmail({ to: user.email, ua, ip, when: Date.now(), pool, userId: user.id })).catch(e => console.error('Errore notifica login:', e));
+            }
+        } catch (e) {
+            console.error('Errore controllo notifica login:', e);
+        }
 
         res.status(200).json({
             message: 'Login effettuato con successo!',
@@ -189,5 +202,45 @@ exports.resendVerificationEmail = async (req, res) => {
     } catch (err) {
         console.error('Errore resend verification:', err);
         return res.status(500).json({ error: 'Errore interno durante il reinvio.' });
+    }
+};
+
+exports.verifyCode = async (req, res) => {
+    const { email, code } = req.body || {};
+    if (!email || !code) {
+        return res.status(400).json({ error: 'Email e codice richiesti.' });
+    }
+    try {
+        const r = await pool.query('SELECT id, verification_code, verification_code_expires FROM Users WHERE email = $1', [email]);
+        const u = r.rows[0];
+        if (!u || !u.verification_code) {
+            return res.status(400).json({ error: 'Codice non presente.' });
+        }
+        if (String(u.verification_code) !== String(code)) {
+            return res.status(400).json({ error: 'Codice non corretto.' });
+        }
+        if (u.verification_code_expires && new Date(u.verification_code_expires) < new Date()) {
+            return res.status(400).json({ error: 'Codice scaduto.' });
+        }
+        await pool.query('UPDATE Users SET email_verified = TRUE, verification_code = NULL, verification_code_expires = NULL WHERE id = $1', [u.id]);
+        return res.status(200).json({ message: 'Verifica completata.' });
+    } catch (err) {
+        console.error('Errore verifica codice:', err);
+        return res.status(500).json({ error: 'Errore interno del server.' });
+    }
+};
+
+exports.toggleLoginNotifications = async (req, res) => {
+    const { enabled } = req.body || {};
+    if (typeof enabled !== 'boolean') {
+        return res.status(400).json({ error: 'Valore non valido.' });
+    }
+    try {
+        const userId = req.user.id;
+        await pool.query('UPDATE Users SET login_notify_enabled = $1 WHERE id = $2', [enabled, userId]);
+        return res.status(200).json({ message: 'Impostazione aggiornata.', enabled });
+    } catch (err) {
+        console.error('Errore toggle notifiche:', err);
+        return res.status(500).json({ error: 'Errore interno del server.' });
     }
 };

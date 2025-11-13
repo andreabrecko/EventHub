@@ -20,6 +20,9 @@
                 <button id="logout-button">Logout</button>
                 <button id="admin-dashboard-button" style="display: none;">Pannello Admin</button>
                 <button id="create-event-button" style="display: none;">Crea un nuovo evento</button>
+                <label id="login-notify-toggle" style="display:none; margin-left:8px;">
+                    <input type="checkbox" id="login-notify-checkbox"> Notifiche login
+                </label>
             </div>
         </div>
     </nav>
@@ -34,6 +37,19 @@
             <div id="events-list" class="event-grid"></div>
         </div>
 
+        <div id="event-detail-page" class="page" style="display:none;">
+            <button id="event-detail-back" style="margin-bottom:12px;">← Torna alla Home</button>
+            <div id="event-detail" class="event-detail">
+                <div id="event-detail-carousel"></div>
+                <h2 id="event-detail-title"></h2>
+                <p id="event-detail-datetime"></p>
+                <p id="event-detail-location"></p>
+                <p id="event-detail-category"></p>
+                <p id="event-detail-description"></p>
+                <div id="event-detail-actions"></div>
+            </div>
+        </div>
+
         <div id="register-page" class="page" style="display: none;">
             <h1>Registrati</h1>
             <form id="register-form">
@@ -46,6 +62,15 @@
                 <button type="button" id="resend-verify-btn" style="display:none; margin-top:8px;">Reinvia email di verifica</button>
             </form>
             <p class="hint">Dopo la registrazione riceverai un’email di conferma.</p>
+            <div style="margin-top:16px;">
+                <h2>Verifica con codice</h2>
+                <form id="verify-code-form" style="display:flex; gap:8px; align-items:center;">
+                    <input type="email" id="verify-email" placeholder="Email" required>
+                    <input type="text" id="verify-code" placeholder="Codice" required>
+                    <button type="submit">Verifica</button>
+                </form>
+                <p id="verify-code-message"></p>
+            </div>
         </div>
 
         <div id="login-page" class="page" style="display: none;">
@@ -111,6 +136,19 @@
                     </label>
                 </div>
                 <ul id="users-list" class="user-list"></ul>
+            </div>
+            <div class="admin-add-user" style="margin-top: 24px;">
+                <h2>Aggiungi Admin</h2>
+                <form id="admin-create-form" style="display:flex; flex-direction:column; gap:8px; max-width:480px;">
+                    <input type="text" id="admin-create-firstname" placeholder="Nome" required>
+                    <input type="text" id="admin-create-lastname" placeholder="Cognome" required>
+                    <input type="text" id="admin-create-username" placeholder="Nome utente" required>
+                    <input type="email" id="admin-create-email" placeholder="Email" required>
+                    <input type="password" id="admin-create-password" placeholder="Password" required>
+                    <input type="tel" id="admin-create-phone" placeholder="Numero di telefono" required>
+                    <button type="submit">Crea Admin</button>
+                    <p id="admin-create-message"></p>
+                </form>
             </div>
         </div>
     </div>

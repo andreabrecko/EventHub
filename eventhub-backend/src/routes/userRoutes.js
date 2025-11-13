@@ -12,6 +12,8 @@ const authMiddleware = require('../middleware/authMiddleware');
 router.post('/register', userController.registerUser);
 // POST /api/users/login: autentica e ritorna JWT
 router.post('/login', userController.loginUser); 
+router.post('/verify-code', userController.verifyCode);
+router.patch('/notifications', authMiddleware.protect, userController.toggleLoginNotifications);
 // GET /api/users/verify-email: conferma la verifica via token
 router.get('/verify-email', userController.verifyEmail);
 // POST /api/users/resend-verification: reinvia email di verifica

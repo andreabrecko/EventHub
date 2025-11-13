@@ -13,15 +13,23 @@ document.addEventListener('DOMContentLoaded', () => {
     welcomeMessage.id = 'welcome-message';
     userInfo.prepend(welcomeMessage);
 
+    const loginNotifyToggle = document.getElementById('login-notify-toggle');
+    const loginNotifyCheckbox = document.getElementById('login-notify-checkbox');
+
     let currentUser = null;
 
     const homePage = document.getElementById('home-page');
+    const eventDetailPage = document.getElementById('event-detail-page');
     const registerPage = document.getElementById('register-page');
     const loginPage = document.getElementById('login-page');
     const createEventPage = document.getElementById('create-event-page');
     const adminPage = document.getElementById('admin-page');
 
     const registerForm = document.getElementById('register-form');
+    const verifyCodeForm = document.getElementById('verify-code-form');
+    const verifyEmailInput = document.getElementById('verify-email');
+    const verifyCodeInput = document.getElementById('verify-code');
+    const verifyCodeMessage = document.getElementById('verify-code-message');
     const loginForm = document.getElementById('login-form');
     const createEventForm = document.getElementById('create-event-form');
 
@@ -29,6 +37,15 @@ document.addEventListener('DOMContentLoaded', () => {
     const loginMessage = document.getElementById('login-message');
     const createEventMessage = document.getElementById('create-event-message');
     const eventsList = document.getElementById('events-list');
+    const eventDetailBack = document.getElementById('event-detail-back');
+    const eventDetailRoot = document.getElementById('event-detail');
+    const eventDetailCarousel = document.getElementById('event-detail-carousel');
+    const eventDetailTitle = document.getElementById('event-detail-title');
+    const eventDetailDateTime = document.getElementById('event-detail-datetime');
+    const eventDetailLocation = document.getElementById('event-detail-location');
+    const eventDetailCategory = document.getElementById('event-detail-category');
+    const eventDetailDescription = document.getElementById('event-detail-description');
+    const eventDetailActions = document.getElementById('event-detail-actions');
     const eventsSearch = document.getElementById('events-search');
     let homeEventsCache = [];
     const eventCategorySelect = document.getElementById('event-category');
@@ -44,6 +61,15 @@ document.addEventListener('DOMContentLoaded', () => {
     const usersSearch = document.getElementById('users-search');
     const usersShowBlocked = document.getElementById('users-show-blocked');
     let adminUsersCache = [];
+
+    const adminCreateForm = document.getElementById('admin-create-form');
+    const adminCreateFirstName = document.getElementById('admin-create-firstname');
+    const adminCreateLastName = document.getElementById('admin-create-lastname');
+    const adminCreateUsername = document.getElementById('admin-create-username');
+    const adminCreateEmail = document.getElementById('admin-create-email');
+    const adminCreatePassword = document.getElementById('admin-create-password');
+    const adminCreatePhone = document.getElementById('admin-create-phone');
+    const adminCreateMessage = document.getElementById('admin-create-message');
 
     let currentView = 'home';
 
@@ -256,6 +282,7 @@ document.addEventListener('DOMContentLoaded', () => {
             adminDashboardButton.style.display = userRole === 'admin' ? 'block' : 'none';
             welcomeMessage.textContent = `Benvenuto, ${localStorage.getItem('username')}${userRole === 'admin' ? ' (admin)' : ''}`;
             welcomeMessage.style.display = 'block';
+            if (loginNotifyToggle) loginNotifyToggle.style.display = 'inline-block';
         } else {
             // Mostra i link di autenticazione e nascondi l'area utente
             if (authLinks) authLinks.style.display = 'block';
@@ -266,11 +293,25 @@ document.addEventListener('DOMContentLoaded', () => {
             createEventButton.style.display = 'none';
             adminDashboardButton.style.display = 'none';
             welcomeMessage.style.display = 'none';
+            if (loginNotifyToggle) loginNotifyToggle.style.display = 'none';
         }
     }
 
     // Chiamata iniziale per aggiornare l'interfaccia utente all'avvio
     updateAuthUI();
+
+    if (loginNotifyCheckbox) {
+        loginNotifyCheckbox.addEventListener('change', async (e) => {
+            try {
+                const res = await apiRequest('/users/notifications', { method: 'PATCH', useAuth: true, timeoutMs: 6000, retry: 0, body: { enabled: !!loginNotifyCheckbox.checked } });
+                showToast(res.message || 'Impostazione aggiornata.', 'success');
+            } catch (err) {
+                const msg = (err && err.status) ? (err.data?.error || err.data?.message || 'Aggiornamento non riuscito.') : 'Errore di rete.';
+                showToast(msg, 'error');
+                loginNotifyCheckbox.checked = !loginNotifyCheckbox.checked;
+            }
+        });
+    }
 
     // Socket.IO client initialisation and admin listeners
     let socket;
@@ -315,14 +356,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const payload = await apiRequest('/events', { timeoutMs: 6000, retry: 2 });
             let events = Array.isArray(payload) ? payload : (Array.isArray(payload.events) ? payload.events : []);
 
-            // Mostra sempre in home solo eventi approvati di altri utenti
-            const currentUserIdStr = localStorage.getItem('userId');
-            if (currentUserIdStr) {
-                const currentUserId = parseInt(currentUserIdStr, 10);
-                if (!Number.isNaN(currentUserId)) {
-                    events = events.filter(ev => ev.user_id !== currentUserId);
-                }
-            }
+            // Mostra tutti gli eventi approvati, inclusi quelli creati dall'utente
 
             homeEventsCache = events;
             applyEventsFilter();
@@ -353,7 +387,8 @@ document.addEventListener('DOMContentLoaded', () => {
         registerPage.style.display = 'none';
         loginPage.style.display = 'none';
         createEventPage.style.display = 'none';
-        adminPage.style.display = 'none'; // Nascondi adminPage per impostazione predefinita
+        adminPage.style.display = 'none';
+        eventDetailPage.style.display = 'none';
 
         pageToShow.style.display = 'block';
         currentView = pageToShow.id.replace('-page', '');
@@ -475,6 +510,36 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     if (usersShowBlocked) {
         usersShowBlocked.addEventListener('change', applyUsersFilter);
+    }
+
+    if (adminCreateForm) {
+        adminCreateForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const firstName = adminCreateFirstName.value.trim();
+            const lastName = adminCreateLastName.value.trim();
+            const username = adminCreateUsername.value.trim();
+            const email = adminCreateEmail.value.trim();
+            const password = adminCreatePassword.value;
+            const phone = adminCreatePhone.value.trim();
+            adminCreateMessage.textContent = '';
+            try {
+                const data = await apiRequest('/admin/users', {
+                    method: 'POST',
+                    useAuth: true,
+                    timeoutMs: 8000,
+                    retry: 0,
+                    body: { firstName, lastName, username, email, password, phone }
+                });
+                showToast(data.message || 'Admin creato.', 'success');
+                adminCreateForm.reset();
+                fetchAdminUsers();
+            } catch (err) {
+                const msg = (err && err.status) ? (err.data?.error || err.data?.message || 'Creazione admin non riuscita.') : 'Errore di rete.';
+                adminCreateMessage.textContent = msg;
+                adminCreateMessage.className = 'error-message';
+                showToast(msg, 'error');
+            }
+        });
     }
 
     // --- Validazioni lato client per Register ---
@@ -703,6 +768,15 @@ document.addEventListener('DOMContentLoaded', () => {
                     });
                     actions.appendChild(btn);
                 }
+                const detailBtn = document.createElement('button');
+                detailBtn.textContent = 'Dettagli';
+                actions.appendChild(detailBtn);
+                detailBtn.addEventListener('click', (e) => { e.stopPropagation(); showEventDetail(event); });
+                eventCard.addEventListener('click', (e) => {
+                    const t = e.target;
+                    if (t.closest('.prev') || t.closest('.next') || t.closest('.indicator-dot') || t.closest('.autoplay-toggle') || t.closest('.report-btn')) return;
+                    showEventDetail(event);
+                });
             } catch (_) {}
         });
     }
@@ -887,6 +961,26 @@ document.addEventListener('DOMContentLoaded', () => {
             registerMessage.className = 'error-message';
         }
     });
+
+    if (verifyCodeForm) {
+        verifyCodeForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const email = verifyEmailInput.value.trim();
+            const code = verifyCodeInput.value.trim();
+            verifyCodeMessage.textContent = '';
+            try {
+                const data = await apiRequest('/users/verify-code', { method: 'POST', timeoutMs: 6000, retry: 0, body: { email, code } });
+                showToast(data.message || 'Verifica completata.', 'success');
+                verifyCodeMessage.textContent = data.message || 'Verifica completata.';
+                verifyCodeMessage.className = 'success-message';
+            } catch (err) {
+                const msg = (err && err.status) ? (err.data?.error || err.data?.message || 'Verifica non riuscita.') : 'Errore di rete.';
+                showToast(msg, 'error');
+                verifyCodeMessage.textContent = msg;
+                verifyCodeMessage.className = 'error-message';
+            }
+        });
+    }
 
     if (resendBtn) {
         resendBtn.addEventListener('click', async () => {
@@ -1088,3 +1182,66 @@ document.addEventListener('DOMContentLoaded', () => {
         showPage(homePage);
     }
 });
+    function showEventDetail(ev) {
+        const photos = extractPhotos(ev.photos);
+        eventDetailCarousel.innerHTML = `
+            <div class="carousel">
+                <button class="prev" aria-label="Precedente">‹</button>
+                <div class="slides">
+                    ${photos.map((url, idx) => `<img class="slide${idx === 0 ? ' active' : ''}" src="${normalizePhotoUrl(url)}" alt="${ev.title} - foto ${idx+1}">`).join('')}
+                </div>
+                <div class="indicators">
+                    ${photos.map((_, idx) => `<button class="indicator-dot${idx === 0 ? ' active' : ''}" data-index="${idx}" aria-label="Vai alla slide ${idx+1}"></button>`).join('')}
+                </div>
+                <button class="next" aria-label="Successiva">›</button>
+                <button class="autoplay-toggle" aria-pressed="true" title="Auto-play">Auto</button>
+            </div>`;
+        eventDetailTitle.textContent = ev.title || '';
+        eventDetailDateTime.textContent = ev.event_date ? new Date(ev.event_date).toLocaleString() : '';
+        eventDetailLocation.textContent = ev.location || '';
+        eventDetailCategory.textContent = `Categoria: ${ev.category_name || 'N/A'}`;
+        eventDetailDescription.textContent = ev.description || '';
+        eventDetailActions.innerHTML = '';
+        const token = localStorage.getItem('token');
+        const role = localStorage.getItem('role');
+        if (token && role !== 'admin') {
+            const btn = document.createElement('button');
+            btn.className = 'report-btn';
+            btn.textContent = 'Segnala evento';
+            btn.addEventListener('click', async () => {
+                const reason = window.prompt('Motivo della segnalazione (facoltativo):') || '';
+                try {
+                    const res = await apiRequest(`/events/${ev.id}/report`, { method: 'POST', useAuth: true, timeoutMs: 6000, retry: 0, body: { reason } });
+                    showToast(res.message || 'Segnalazione inviata.', 'success');
+                } catch (err) {
+                    const msg = (err && err.status) ? (err.data?.error || err.data?.message || 'Segnalazione non riuscita.') : 'Errore di rete durante la segnalazione.';
+                    showToast(msg, 'error');
+                }
+            });
+            eventDetailActions.appendChild(btn);
+        }
+        showPage(eventDetailPage);
+        const carousel = eventDetailCarousel.querySelector('.carousel');
+        const slides = carousel.querySelectorAll('.slide');
+        const dots = carousel.querySelectorAll('.indicator-dot');
+        let currentIndex = 0;
+        const showSlide = (i) => {
+            slides.forEach((img, idx) => img.classList.toggle('active', idx === i));
+            dots.forEach((dot, idx) => dot.classList.toggle('active', idx === i));
+        };
+        showSlide(0);
+        carousel.querySelector('.prev').addEventListener('click', () => { currentIndex = (currentIndex - 1 + slides.length) % slides.length; showSlide(currentIndex); });
+        carousel.querySelector('.next').addEventListener('click', () => { currentIndex = (currentIndex + 1) % slides.length; showSlide(currentIndex); });
+        dots.forEach(dot => { dot.addEventListener('click', () => { const idx = parseInt(dot.getAttribute('data-index'), 10); currentIndex = Number.isNaN(idx) ? 0 : idx; showSlide(currentIndex); }); });
+        slides.forEach(img => { img.addEventListener('error', () => { img.src = PLACEHOLDER_PHOTO; img.classList.add('img-error'); }); img.addEventListener('click', () => openImageModal(img.src, img.alt)); });
+    }
+
+    {
+        const backEl = document.getElementById('event-detail-back');
+        if (backEl) {
+            backEl.addEventListener('click', (e) => {
+                e.preventDefault();
+                showPage(homePage);
+            });
+        }
+    }

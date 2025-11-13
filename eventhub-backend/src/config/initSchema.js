@@ -20,9 +20,15 @@ async function initSchema() {
         email_verified BOOLEAN NOT NULL DEFAULT FALSE,
         verification_token TEXT,
         verification_token_expires TIMESTAMP,
+        verification_code TEXT,
+        verification_code_expires TIMESTAMP,
+        login_notify_enabled BOOLEAN NOT NULL DEFAULT TRUE,
         created_at TIMESTAMP DEFAULT NOW()
       );
     `);
+    await client.query(`ALTER TABLE IF EXISTS Users ADD COLUMN IF NOT EXISTS first_name TEXT`);
+    await client.query(`ALTER TABLE IF EXISTS Users ADD COLUMN IF NOT EXISTS last_name TEXT`);
+    await client.query(`ALTER TABLE IF EXISTS Users ADD COLUMN IF NOT EXISTS phone TEXT`);
 
     // Categories
     await client.query(`
@@ -79,6 +85,20 @@ async function initSchema() {
         sender_id INTEGER REFERENCES Users(id) ON DELETE CASCADE,
         message_text TEXT NOT NULL,
         sent_at TIMESTAMP DEFAULT NOW()
+      );
+    `);
+
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS EmailLogs (
+        id SERIAL PRIMARY KEY,
+        user_id INTEGER REFERENCES Users(id) ON DELETE SET NULL,
+        email TEXT NOT NULL,
+        type TEXT NOT NULL,
+        subject TEXT NOT NULL,
+        status TEXT NOT NULL,
+        error_message TEXT,
+        meta JSONB,
+        created_at TIMESTAMP DEFAULT NOW()
       );
     `);
 

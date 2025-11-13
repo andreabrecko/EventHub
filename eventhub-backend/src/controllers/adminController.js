@@ -2,6 +2,7 @@
 
 const { pool } = require('../config/db');
 const socketManager = require('../utils/socketManager');
+const bcrypt = require('bcrypt');
 
 // --- D.1 Gestione Eventi (Approva/Rifiuta) ---
 exports.approveEvent = async (req, res) => {
@@ -212,5 +213,61 @@ exports.resolveReport = async (req, res) => {
     } catch (err) {
         console.error('Errore risoluzione segnalazione:', err?.message || err);
         res.status(500).json({ error: 'Errore interno del server.' });
+    }
+};
+
+exports.createAdminUser = async (req, res) => {
+    const { firstName, lastName, username, email, password, phone } = req.body || {};
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/i;
+    const isStrongPassword = (pw) => {
+        const p = String(pw || '');
+        return p.length >= 8 && /[A-Z]/.test(p) && /[a-z]/.test(p) && /[0-9]/.test(p) && /[^A-Za-z0-9]/.test(p);
+    };
+    const isUsernameAllowed = (un) => {
+        const normalized = String(un || '').toLowerCase();
+        const badWords = ['cazzo','merda','stronzo','puttana','vaffanculo'];
+        if (normalized.length < 3 || normalized.length > 20) return false;
+        if (!/^[a-z0-9_]+$/i.test(un)) return false;
+        return !badWords.some(w => normalized.includes(w));
+    };
+    const isValidPhone = (ph) => {
+        const s = String(ph || '').trim();
+        return /^\+?[0-9\s-]{7,20}$/.test(s);
+    };
+    if (!firstName || !lastName || !username || !email || !password || !phone) {
+        return res.status(400).json({ error: 'Fornire tutti i campi richiesti.' });
+    }
+    if (!emailRegex.test(String(email))) {
+        return res.status(400).json({ error: 'Email non valida.' });
+    }
+    if (!isUsernameAllowed(username)) {
+        return res.status(400).json({ error: 'Username non consentito.' });
+    }
+    if (!isStrongPassword(password)) {
+        return res.status(400).json({ error: 'Password troppo debole.' });
+    }
+    if (!isValidPhone(phone)) {
+        return res.status(400).json({ error: 'Numero di telefono non valido.' });
+    }
+    try {
+        const password_hash = await bcrypt.hash(password, 10);
+        const colsRes = await pool.query("SELECT column_name FROM information_schema.columns WHERE table_name = 'users'");
+        const cols = colsRes.rows.map(r => String(r.column_name).toLowerCase());
+        const insertCols = ['username','email','password_hash','role'];
+        const values = [username, email, password_hash, 'admin'];
+        if (cols.includes('first_name')) { insertCols.push('first_name'); values.push(firstName); }
+        if (cols.includes('last_name')) { insertCols.push('last_name'); values.push(lastName); }
+        if (cols.includes('phone')) { insertCols.push('phone'); values.push(phone); }
+        if (cols.includes('email_verified')) { insertCols.push('email_verified'); values.push(true); }
+        const placeholders = insertCols.map((_, i) => `$${i+1}`);
+        const q = `INSERT INTO Users (${insertCols.join(',')}) VALUES (${placeholders.join(',')}) RETURNING id, username, email, role${cols.includes('first_name')?', first_name':''}${cols.includes('last_name')?', last_name':''}${cols.includes('phone')?', phone':''}`;
+        const r = await pool.query(q, values);
+        return res.status(201).json({ message: 'Admin creato con successo.', user: r.rows[0] });
+    } catch (err) {
+        if (err && err.code === '23505') {
+            return res.status(409).json({ error: 'Email già in uso.' });
+        }
+        console.error('Errore creazione admin:', err?.message || err);
+        return res.status(500).json({ error: 'Errore interno del server.', code: err && err.code, message: err && err.message });
     }
 };
