@@ -348,6 +348,27 @@ form button:hover {
     justify-content: center;
 }
 
+.age-gate-overlay { position: fixed; inset: 0; background: radial-gradient(closest-side at 50% 40%, rgba(0,0,0,0.88), rgba(0,0,0,0.7)); display: flex; align-items: center; justify-content: center; z-index: 2000; opacity: 0; pointer-events: none; transition: opacity 240ms ease; }
+.age-gate-overlay.open { opacity: 1; pointer-events: auto; }
+.age-gate-card { background: #0f0f0f; color: #eaeaea; width: min(92vw, 420px); border-radius: 12px; padding: 16px; box-shadow: 0 12px 28px rgba(0,0,0,0.6); border: 1px solid rgba(255,255,255,0.12); position: relative; }
+.age-gate-top { display:flex; justify-content:flex-start; }
+.age-gate-lang { background: rgba(255,255,255,0.08); color:#eaeaea; border:1px solid rgba(255,255,255,0.25); border-radius:6px; padding:4px 8px; font-size:12px; position: relative; }
+.age-gate-lang::after { content:''; display:inline-block; width:0; height:0; border-left:4px solid transparent; border-right:4px solid transparent; border-top:6px solid #eaeaea; margin-left:6px; vertical-align:middle; }
+.age-gate-brand { display:flex; justify-content:center; align-items:center; gap:6px; margin: 10px 0; }
+.age-brand-text { font-size: 22px; font-weight: 800; color: #ffffff; text-shadow: 0 1px 1px rgba(0,0,0,0.6); }
+.age-brand-hub { font-size: 20px; font-weight: 800; color: #0a0a0a; background-color: #ff7f00; padding: 2px 6px; border-radius: 4px; box-shadow: 0 1px 0 rgba(0,0,0,0.4) inset; }
+.age-gate-card h2 { margin: 6px 0 12px; font-size: 22px; color: #ffffff; font-weight: 800; text-align:center; }
+.age-gate-notice { background: transparent; color:#ffffff; border:1px solid #ff7f00; padding:10px 14px; border-radius:8px; font-weight:700; margin: 8px auto; display:block; width: fit-content; }
+.age-gate-desc { color:#eaeaea; font-size: 14px; line-height: 1.6; text-align:center; margin: 8px 0; }
+.age-gate-law { color:#ffd700; font-weight:700; margin: 8px 0; text-align:center; }
+.age-gate-actions { display:flex; flex-direction:column; gap:10px; margin-top: 12px; }
+.age-btn { padding: 12px 14px; border-radius: 8px; font-weight: 700; font-size: 14px; }
+.age-btn.primary { background:#ff7f00; color:#0a0a0a; border:none; }
+.age-btn.secondary { background: transparent; color:#eaeaea; border:2px solid #ff7f00; }
+@media (min-width: 768px) {
+  .age-gate-card { width: 420px; }
+}
+
 .modal-content {
     background-color: #0f0f0f;
     margin: auto;
@@ -426,6 +447,25 @@ form button:hover {
 
 #logout-button:hover {
     background-color: #c82333;
+}
+
+/* Notice page and No18 page */
+.notice-button { background: transparent; color:#eaeaea; border:1px solid #ff7f00; padding:8px 12px; border-radius:8px; }
+.notice-button:hover { background: rgba(255,127,0,0.15); }
+.notice-content { background:#121212; border:1px solid rgba(255,255,255,0.12); border-radius:12px; padding:12px; }
+.no18-wrapper { position: fixed; inset:0; background:#000; display:flex; align-items:center; justify-content:center; z-index: 3000; }
+.no18-full { max-width:100vw; max-height:100vh; width:100%; height:100%; object-fit:cover; }
+
+.no18-overlay { position: fixed; inset:0; background: rgba(0,0,0,0.85); display:flex; align-items:center; justify-content:center; z-index: 4000; opacity: 0; pointer-events: none; transition: opacity 240ms ease; }
+.no18-overlay.open { opacity: 1; pointer-events: auto; }
+.no18-overlay .no18-content { display:flex; flex-direction:column; align-items:center; gap:12px; padding: 8px; width: 100%; height: 100%; justify-content:center; }
+.no18-overlay .no18-image { max-width: 92vw; max-height: 62vh; width: auto; height: auto; object-fit: contain; image-rendering: auto; border-radius: 8px; }
+.no18-overlay .no18-message { background: #0f0f0f; color: #eaeaea; border: 1px solid rgba(255,255,255,0.15); border-radius: 12px; padding: 16px; width: min(92vw, 520px); text-align: center; box-shadow: 0 12px 28px rgba(0,0,0,0.6); }
+.no18-overlay .no18-message h3 { margin: 4px 0 8px; font-size: 18px; color: #ffffff; font-weight: 800; }
+.no18-overlay .no18-message p { margin: 6px 0; font-size: 14px; line-height: 1.6; }
+.no18-overlay .no18-message a { color: #ff7f00; text-decoration: underline; }
+@media (min-width: 768px) {
+  .no18-overlay .no18-image { max-height: 58vh; }
 }
 
 .admin-dashboard {
@@ -593,3 +633,6 @@ form button:hover {
 .report-btn.loading::after { content:''; position:absolute; right:10px; top:50%; transform:translateY(-50%); width:14px; height:14px; border:2px solid #000; border-top-color:#ff7f00; border-radius:50%; animation: spin 620ms linear infinite; }
 .register-btn.loading { opacity: 0.85; pointer-events: none; position: relative; }
 .register-btn.loading::after { content:''; position:absolute; right:10px; top:50%; transform:translateY(-50%); width:14px; height:14px; border:2px solid #0a0a0a; border-top-color:#ffffff; border-radius:50%; animation: spin 620ms linear infinite; }
+/* Admin reset button (visibile solo per admin, creato via JS) */
+.admin-reset-btn { position: fixed; right: 12px; bottom: 12px; background:#ff7f00; color:#0a0a0a; border:none; padding:8px 12px; border-radius:8px; font-weight:700; z-index: 3200; }
+.admin-reset-btn:hover { background:#e56f00; }

@@ -18,6 +18,84 @@ document.addEventListener('DOMContentLoaded', () => {
 
     let currentUser = null;
 
+    const ageOverlay = document.getElementById('age-gate-overlay');
+    const ageEnter = document.getElementById('age-enter');
+    const ageExit = document.getElementById('age-exit');
+    const ageGateNoticeBtn = document.querySelector('.age-gate-notice');
+    const noticePage = document.getElementById('notice-page');
+    const no18Page = document.getElementById('no18-page');
+    let no18OverlayEl = null;
+    let no18ImageAvailable = false;
+    let no18ImageSrc = '/public/Homeno18.jpg';
+    const NO18_CANDIDATE_PATHS = ['/public/Homeno18.jpg','Homeno18.jpg','/Homeno18.jpg','public/Homeno18.jpg'];
+    async function preloadNo18(src) {
+        try {
+            const ok = await new Promise((resolve) => {
+                const im = new Image();
+                im.onload = () => resolve(true);
+                im.onerror = () => resolve(false);
+                im.src = src;
+            });
+            return ok;
+        } catch (_) { return false; }
+    }
+    async function resolveNo18Path() {
+        for (const p of NO18_CANDIDATE_PATHS) {
+            const ok = await preloadNo18(p);
+            if (ok) return p;
+        }
+        return null;
+    }
+    (async () => { const f = await resolveNo18Path(); if (f) { no18ImageSrc = f; no18ImageAvailable = true; } })();
+
+    function setCookie(name, value, days = 365) {
+        const d = new Date(); d.setDate(d.getDate() + days);
+        document.cookie = `${name}=${value}; expires=${d.toUTCString()}; path=/`;
+    }
+    function getCookie(name) {
+        const m = document.cookie.match(new RegExp('(^| )' + name + '=([^;]+)'));
+        return m ? m[2] : null;
+    }
+    function isAuthenticated() { return !!localStorage.getItem('token'); }
+    function showAgeGateIfNeeded() {
+        const accepted = localStorage.getItem('ageGateAccepted') === '1' || getCookie('ageGateAccepted') === '1';
+        const force = isTestMode();
+        if ((force || (!accepted && !isAuthenticated())) && ageOverlay) {
+            ageOverlay.hidden = false;
+            ageOverlay.classList.add('open');
+            document.body.style.overflow = 'hidden';
+        }
+    }
+    if (ageEnter) {
+        ageEnter.addEventListener('click', () => {
+            const test = isTestMode();
+            if (!test) {
+                localStorage.setItem('ageGateAccepted', '1');
+                localStorage.setItem('ageGateMeta', JSON.stringify({ choice: 'enter', timestamp: new Date().toISOString() }));
+                setCookie('ageGateAccepted','1');
+            }
+            if (ageOverlay) {
+                ageOverlay.classList.remove('open');
+                setTimeout(() => { ageOverlay.hidden = true; document.body.style.overflow = ''; }, 240);
+            }
+            showPage(homePage);
+        });
+    }
+    if (ageExit) {
+        ageExit.addEventListener('click', () => {
+            const test = isTestMode();
+            if (!test) {
+                localStorage.removeItem('ageGateAccepted');
+                localStorage.setItem('ageGateMeta', JSON.stringify({ choice: 'exit', timestamp: new Date().toISOString() }));
+                setCookie('ageGateAccepted','',-1);
+            }
+            if (ageOverlay) { ageOverlay.classList.remove('open'); ageOverlay.hidden = true; }
+            openNo18Overlay();
+        });
+    }
+    if (ageGateNoticeBtn) { ageGateNoticeBtn.addEventListener('click', () => showPage(noticePage)); }
+    showAgeGateIfNeeded();
+
     const homePage = document.getElementById('home-page');
     const eventDetailPage = document.getElementById('event-detail-page');
     const registerPage = document.getElementById('register-page');
@@ -109,8 +187,102 @@ document.addEventListener('DOMContentLoaded', () => {
         loginPage.style.display = 'none';
         createEventPage.style.display = 'none';
         adminPage.style.display = 'none';
+        if (noticePage) noticePage.style.display = 'none';
+        if (no18Page) no18Page.style.display = 'none';
 
         page.style.display = 'block';
+    }
+
+    async function openNo18Overlay() {
+        if (!no18OverlayEl) {
+            no18OverlayEl = document.createElement('div');
+            no18OverlayEl.id = 'no18-overlay';
+            no18OverlayEl.className = 'no18-overlay';
+            const content = document.createElement('div');
+            content.className = 'no18-content';
+            const msg = document.createElement('div');
+            msg.className = 'no18-message';
+            msg.innerHTML = '<h3>Accesso vietato ai minori</h3>'+
+              '<p>Se hai meno di 18 anni (o la maggiore età prevista dalla tua giurisdizione), non puoi accedere ai contenuti di questo sito. L\'accesso è limitato agli adulti e alcune sezioni potrebbero contenere materiale non adatto ai minori.</p>'+
+              '<p>Per ulteriori informazioni o per segnalazioni, contatta l\'assistenza all\'indirizzo <a href="mailto:support@eventhub.local">support@eventhub.local</a> oppure chiedi a un genitore/tutore di consultare la nostra pagina di informazioni.</p>'+
+              '<p>Puoi tornare alla homepage quando raggiungerai l\'età richiesta.</p>';
+            const img = document.createElement('img');
+            let finalSrc = no18ImageSrc;
+            if (!no18ImageAvailable) {
+                const found = await resolveNo18Path();
+                if (found) { finalSrc = found; no18ImageAvailable = true; }
+            }
+            img.src = no18ImageAvailable ? finalSrc : 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="720"><rect width="100%" height="100%" fill="%23000"/><text x="50%" y="50%" dominant-baseline="middle" text-anchor="middle" fill="%23fff" font-family="Arial" font-size="28">Immagine Homeno18.jpg non trovata</text><text x="50%" y="58%" dominant-baseline="middle" text-anchor="middle" fill="%23bbb" font-family="Arial" font-size="18">Percorsi tentati: '+NO18_CANDIDATE_PATHS.join(', ')+'</text><text x="50%" y="66%" dominant-baseline="middle" text-anchor="middle" fill="%23bbb" font-family="Arial" font-size="18">Codice: script.js::openNo18Overlay</text></svg>';
+            img.alt = 'Accesso vietato ai minori';
+            img.className = 'no18-image';
+            content.appendChild(msg);
+            content.appendChild(img);
+            if (!no18ImageAvailable) {
+                console.error('IMG_NOT_FOUND', {
+                    attempted: ['Homeno18.jpg','/Homeno18.jpg','public/Homeno18.jpg','/public/Homeno18.jpg'],
+                    location: 'eventhub-client/script.js::openNo18Overlay',
+                });
+            }
+            no18OverlayEl.appendChild(content);
+            document.body.appendChild(no18OverlayEl);
+            no18OverlayEl.addEventListener('click', (e) => { if (e.target === no18OverlayEl) closeNo18Overlay(); });
+            document.addEventListener('keydown', onNo18Esc, true);
+            no18OverlayEl.addEventListener('touchstart', (e) => { if (e.target === no18OverlayEl) closeNo18Overlay(); }, { passive: true });
+        }
+        no18OverlayEl.hidden = false;
+        no18OverlayEl.classList.add('open');
+        document.body.style.overflow = 'hidden';
+    }
+
+    function closeNo18Overlay() {
+        if (!no18OverlayEl) return;
+        no18OverlayEl.classList.remove('open');
+        setTimeout(() => { no18OverlayEl.hidden = true; document.body.style.overflow = ''; }, 240);
+        document.removeEventListener('keydown', onNo18Esc, true);
+    }
+
+    function onNo18Esc(e) { if (e.key === 'Escape') closeNo18Overlay(); }
+
+    async function runNo18OverlayTest() {
+        try {
+            localStorage.removeItem('token');
+            localStorage.removeItem('ageGateAccepted');
+            const btn = document.getElementById('age-exit');
+            if (!btn) throw new Error('Pulsante age-exit non trovato');
+            btn.click();
+            await new Promise(res => setTimeout(res, 60));
+            const overlay = document.getElementById('no18-overlay');
+            const message = overlay && overlay.querySelector('.no18-message');
+            const img = overlay && overlay.querySelector('.no18-image');
+            if (!overlay || overlay.hidden) throw new Error('Overlay non visibile');
+            const hasHeading = message && /Accesso vietato ai minori/i.test(message.textContent || '');
+            const hasContact = message && /support@eventhub\.local/i.test(message.innerHTML || '');
+            const hasAlt = img && /vietato ai minori/i.test(img.alt || '');
+            if (!hasHeading || !hasContact || !hasAlt) throw new Error('Contenuto incompleto');
+            const ev = new KeyboardEvent('keydown', { key: 'Escape' });
+            document.dispatchEvent(ev);
+            await new Promise(res => setTimeout(res, 280));
+            const closed = overlay.hidden === true;
+            if (!closed) throw new Error('Overlay non si chiude con ESC');
+            // Touch test
+            btn.click();
+            await new Promise(res => setTimeout(res, 60));
+            const ov2 = document.getElementById('no18-overlay');
+            if (ov2 && typeof TouchEvent !== 'undefined') {
+                ov2.dispatchEvent(new TouchEvent('touchstart', { bubbles: true, cancelable: true }));
+            } else if (ov2) {
+                ov2.dispatchEvent(new Event('click', { bubbles: true, cancelable: true }));
+            }
+            await new Promise(res => setTimeout(res, 280));
+            const closedTouch = ov2 && ov2.hidden === true;
+            if (!closedTouch) throw new Error('Overlay non si chiude con touch');
+            console.log('TEST_NO18_OVERLAY_PASS');
+        } catch (err) {
+            console.error('TEST_NO18_OVERLAY_FAIL', err && err.message ? err.message : err);
+        }
+    }
+    if (localStorage.getItem('runNo18Test') === '1') {
+        setTimeout(runNo18OverlayTest, 100);
     }
 
     const DEFAULT_API_ORIGIN = 'http://localhost:3000';
@@ -272,17 +444,53 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Test di connettività al backend
     apiRequest('/health', { timeoutMs: 2500, retry: 1 })
-        .then(() => {
-            console.log('Connessione al backend riuscita!');
+        .then((h) => {
+            try {
+                const ok = h && h.status === 'API running';
+                if (ok) {
+                    console.log('Connessione al backend riuscita!', h);
+                    if (!h.dbConnected) {
+                        showToast('Database non disponibile: modalità offline. Alcuni dati potrebbero essere incompleti.', 'warning');
+                    }
+                }
+            } catch (_) {}
         })
         .catch(error => {
             console.error('Connessione al backend fallita:', error.message || error);
+            showToast('Backend non raggiungibile. Ritenta più tardi.', 'error');
         });
 
     function updateAuthUI() {
         console.log('updateAuthUI called. Token:', localStorage.getItem('token') ? 'Present' : 'Absent', 'role:', localStorage.getItem('role'), 'currentUser:', currentUser);
         const token = localStorage.getItem('token');
         const userRole = localStorage.getItem('role');
+        try {
+            const existing = document.getElementById('admin-reset-btn');
+            if (existing) existing.remove();
+            if (userRole === 'admin') {
+                const btn = document.createElement('button');
+                btn.id = 'admin-reset-btn';
+                btn.className = 'admin-reset-btn';
+                btn.textContent = 'Reset (admin)';
+                btn.title = 'Reset filtri, backup eventi e preferenze';
+                btn.addEventListener('click', () => {
+                    try {
+                        selectedCategoryIds = new Set();
+                        currentSearchQuery = '';
+                        if (eventsSearch) eventsSearch.value = '';
+                        applyEventsFilter();
+                        localStorage.removeItem('eventsBackup');
+                        localStorage.removeItem('ageGateAccepted');
+                        localStorage.removeItem('ageGateMeta');
+                        localStorage.removeItem('ageGateTestMode');
+                        showToast('Reset effettuato: filtri/backup/preferenze', 'success');
+                    } catch (e) {
+                        showToast('Reset non riuscito: ' + (e && e.message ? e.message : 'Errore'), 'error');
+                    }
+                });
+                document.body.appendChild(btn);
+            }
+        } catch(_) {}
     
         if (token) {
             // Nascondi i link di autenticazione e mostra l'area utente
@@ -488,10 +696,20 @@ document.addEventListener('DOMContentLoaded', () => {
             // Mostra tutti gli eventi approvati, inclusi quelli creati dall'utente
 
             homeEventsCache = events;
+            try { localStorage.setItem('eventsBackup', JSON.stringify({ ts: Date.now(), events })); } catch(_) {}
+            console.info('EVENTS_FETCH_OK', { count: events.length });
             applyEventsFilter();
         } catch (error) {
             console.error('Errore di rete durante il recupero degli eventi:', error.message || error);
-            homeEventsCache = [];
+            try {
+                const b = JSON.parse(localStorage.getItem('eventsBackup') || '{}');
+                if (Array.isArray(b.events)) {
+                    console.warn('EVENTS_FETCH_FALLBACK_LOCAL', { count: b.events.length, ts: b.ts });
+                    homeEventsCache = b.events;
+                } else {
+                    homeEventsCache = [];
+                }
+            } catch (_) { homeEventsCache = []; }
             applyEventsFilter();
         }
     }
@@ -1482,3 +1700,41 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 });
+    async function preloadImage(src) {
+        try {
+            const ok = await new Promise((resolve) => {
+                const im = new Image();
+                im.onload = () => resolve(true);
+                im.onerror = () => resolve(false);
+                im.src = src;
+            });
+            return ok;
+        } catch (_) {
+            return false;
+        }
+    }
+    (async () => { no18ImageAvailable = await preloadImage(no18ImageSrc); })();
+    async function runNo18ImageTest() {
+        try {
+            const ok = await preloadImage(no18ImageSrc);
+            if (!ok) throw new Error('Homeno18.jpg non raggiungibile');
+            const img = new Image();
+            img.src = no18ImageSrc;
+            await new Promise((res, rej) => { img.onload = res; img.onerror = rej; });
+            if (!(img.naturalWidth > 0 && img.naturalHeight > 0)) throw new Error('Dimensioni immagine non valide');
+            console.log('TEST_NO18_IMAGE_PASS', JSON.stringify({ w: img.naturalWidth, h: img.naturalHeight }));
+        } catch (err) {
+            console.error('TEST_NO18_IMAGE_FAIL', err && err.message ? err.message : err);
+        }
+    }
+    if (localStorage.getItem('runNo18ImageTest') === '1') {
+        setTimeout(runNo18ImageTest, 120);
+    }
+    function isTestMode() {
+        try {
+            const url = new URL(window.location.href);
+            const qp = url.searchParams.get('ageGateTestMode');
+            if (qp === '1') localStorage.setItem('ageGateTestMode', '1');
+        } catch (_) {}
+        return localStorage.getItem('ageGateTestMode') === '1';
+    }

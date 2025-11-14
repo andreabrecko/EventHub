@@ -7,6 +7,20 @@
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
+    <div id="age-gate-overlay" class="age-gate-overlay" hidden>
+      <div class="age-gate-card" role="dialog" aria-modal="true" aria-labelledby="age-gate-title">
+        <div class="age-gate-top"><button class="age-gate-lang" aria-label="Lingua">Italian</button></div>
+        <div class="age-gate-brand"><span class="age-brand-text">Event</span><span class="age-brand-hub">hub</span></div>
+        <h2 id="age-gate-title">Questo è un sito per adulti</h2>
+        <button class="age-gate-notice">Notice to Users</button>
+        <p class="age-gate-desc">Questo sito contiene materiale vietato ai minori, tra cui iscrizione ad eventi e attività riservate ad un pubblico adulto. Entrando, dichiari di avere almeno 18 anni o la maggiore età nella giurisdizione da cui accedi al sito e acconsenti alla visualizzazione di contenuti espliciti</p>
+        <p class="age-gate-law">Avviso alle forze dell'ordine</p>
+        <div class="age-gate-actions">
+          <button id="age-enter" class="age-btn primary">Ho 18 anni o più - Entra</button>
+          <button id="age-exit" class="age-btn secondary">Ho meno di 18 anni - Esci</button>
+        </div>
+      </div>
+    </div>
     <nav class="navbar">
         <div class="navbar-left">
             <button id="menu-button" class="menu-button" aria-label="Menu"><span></span></button>
@@ -94,6 +108,24 @@
             </div>
         </div>
 
+        <div id="notice-page" class="page" style="display:none;">
+            <h1>Notice to Users</h1>
+            <div class="notice-content">
+                <p>Questa pagina contiene informazioni importanti per l'utente riguardo alle politiche del sito, la moderazione degli eventi, i termini d'uso e la protezione dei minori. Leggere attentamente prima di procedere.</p>
+                <ul>
+                    <li>Eventi riservati ad adulti: informazioni su autorizzazioni e requisiti</li>
+                    <li>Regole di condotta e segnalazioni</li>
+                    <li>Privacy e gestione dei dati</li>
+                </ul>
+            </div>
+        </div>
+
+        <div id="no18-page" class="page" style="display:none;">
+            <div class="no18-wrapper">
+                <img src="/public/Homeno18.jpg" alt="Accesso vietato ai minori" class="no18-full" />
+            </div>
+        </div>
+        
         <div id="register-page" class="page" style="display: none;">
             <h1>Registrati</h1>
             <form id="register-form">

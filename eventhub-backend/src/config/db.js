@@ -4,16 +4,33 @@
 
 const { Pool } = require('pg'); 
 
-// Abilita SSL solo in produzione o se esplicitamente richiesto via env
+// Abilita SSL in produzione o se richiesto. Aiven richiede SSL.
 const useSSL = (process.env.DB_SSL === 'true') || (process.env.NODE_ENV === 'production');
 
+// Supporto connection string (Aiven/Heroku): AIVEN_DATABASE_URL o DATABASE_URL
+const connectionString = process.env.AIVEN_DATABASE_URL || process.env.DATABASE_URL || '';
+
+const baseConfig = connectionString
+  ? { connectionString }
+  : {
+      user: process.env.DB_USER,
+      host: process.env.DB_HOST,
+      database: process.env.DB_NAME,
+      password: process.env.DB_PASSWORD,
+      port: Number(process.env.DB_PORT) || 5432,
+    };
+
+const sslConfig = (useSSL || !!connectionString)
+  ? (
+      process.env.DB_CA_CERT
+        ? { ca: process.env.DB_CA_CERT }
+        : { rejectUnauthorized: false }
+    )
+  : false;
+
 const pool = new Pool({
-    user: process.env.DB_USER,
-    host: process.env.DB_HOST,
-    database: process.env.DB_NAME,
-    password: process.env.DB_PASSWORD,
-    port: Number(process.env.DB_PORT) || 5432,
-    ssl: useSSL ? { rejectUnauthorized: false } : false
+  ...baseConfig,
+  ssl: sslConfig,
 });
 
 let isConnected = false;
@@ -35,4 +52,6 @@ const connectDB = async () => {
     }
 };
 
-module.exports = { connectDB, pool };
+const getDBStatus = () => ({ connected: isConnected, via: connectionString ? 'connectionString' : 'envParams' });
+
+module.exports = { connectDB, pool, getDBStatus };
