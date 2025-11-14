@@ -1,0 +1,21 @@
+{
+  "dataSources": [
+    {
+      "name": "Aiven-EventHub-PostgreSQL",
+      "driver": "postgresql",
+      "provider": "postgresql",
+      "savePassword": false,
+      "user": "<USER>",
+      "password": "<PASSWORD>",
+      "url": "jdbc:postgresql://<HOST>:<PORT>/<DB>?ssl=true&sslmode=verify-full",
+      "properties": {
+        "ssl": "true",
+        "sslmode": "verify-full",
+        "sslrootcert": "<ABSOLUTE_PATH_TO_ca.pem>",
+        "connectTimeout": "15",
+        "keepalives": "1",
+        "keepalives_idle": "30"
+      }
+    }
+  ]
+}

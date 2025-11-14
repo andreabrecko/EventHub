@@ -636,3 +636,10 @@ form button:hover {
 /* Admin reset button (visibile solo per admin, creato via JS) */
 .admin-reset-btn { position: fixed; right: 12px; bottom: 12px; background:#ff7f00; color:#0a0a0a; border:none; padding:8px 12px; border-radius:8px; font-weight:700; z-index: 3200; }
 .admin-reset-btn:hover { background:#e56f00; }
+.oauth-row { display:flex; gap:10px; margin-top:12px; flex-wrap:wrap; }
+.oauth-btn { display:flex; align-items:center; gap:8px; padding:10px 14px; border-radius:8px; font-weight:700; cursor:pointer; border:2px solid #ff7f00; background: transparent; color:#eaeaea; }
+.oauth-btn:hover { background: rgba(255,127,0,0.12); }
+.oauth-btn.github { color:#eaeaea; }
+.oauth-btn .oauth-icon { display:inline-flex; }
+.oauth-btn .oauth-text { display:inline-block; }
+@media (max-width: 480px) { .oauth-row { justify-content: flex-start; } .oauth-btn { width: 100%; justify-content:center; } }

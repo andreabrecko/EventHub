@@ -33,21 +33,24 @@ configurePassport();
 const clientPath = path.join(__dirname, '..', '..', 'eventhub-client');
 app.use('/', express.static(clientPath));
 
-// Servire in modo sicuro l'immagine Homeno18.jpg dal root del progetto
+// Servire in modo sicuro l'immagine Homeno18.jpg cercando nei percorsi noti
 app.get('/public/Homeno18.jpg', (req, res) => {
-    const clientPublic = path.join(__dirname, '..', '..', 'eventhub-client', 'public', 'Homeno18.jpg');
-    const rootFallback = path.join(__dirname, '..', '..', 'Homeno18.jpg');
-    res.sendFile(clientPublic, (err) => {
-        if (err) {
-            console.error('IMG_NOT_FOUND_TRY_ROOT', { path: clientPublic, location: 'eventhub-backend/src/app.js::/public/Homeno18.jpg', error: err && err.message });
-            res.sendFile(rootFallback, (err2) => {
-                if (err2) {
-                    console.error('IMG_NOT_FOUND_FINAL', { path: rootFallback, location: 'eventhub-backend/src/app.js::/public/Homeno18.jpg', error: err2 && err2.message });
-                    if (!res.headersSent) res.status(404).end();
-                }
-            });
-        }
-    });
+    const paths = [
+        path.join(__dirname, '..', '..', 'eventhub-client', 'public', 'Homeno18.jpg'),
+        path.join(__dirname, '..', '..', 'eventhub-client', 'Homeno18.jpg'),
+        path.join(__dirname, '..', '..', 'Homeno18.jpg'),
+    ];
+    const tryNext = (i) => {
+        if (i >= paths.length) { if (!res.headersSent) res.status(404).end(); return; }
+        const p = paths[i];
+        res.sendFile(p, (err) => {
+            if (err) {
+                console.error('IMG_NOT_FOUND', { path: p, index: i, location: 'eventhub-backend/src/app.js::/public/Homeno18.jpg', error: err && err.message });
+                tryNext(i + 1);
+            }
+        });
+    };
+    tryNext(0);
 });
 
 // Servire staticamente i file caricati (foto eventi)
@@ -63,7 +66,7 @@ app.use('/api/docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec));
 const { getDBStatus } = require('./config/db');
 app.get('/api/health', (req, res) => {
     const db = getDBStatus();
-    res.status(200).json({ status: 'API running', service: 'EventHub', dbConnected: !!db.connected, dbVia: db.via });
+    res.status(200).json({ status: 'API running', service: 'EventHub', dbConnected: !!db.connected, dbVia: db.via, dbError: db.error || null });
 });
 
 // Inizializzazione: assicurarsi che la tabella EventPhotos esista

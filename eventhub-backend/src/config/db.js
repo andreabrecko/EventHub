@@ -34,6 +34,7 @@ const pool = new Pool({
 });
 
 let isConnected = false;
+let lastError = null;
 // Esegue una query di health-check sul DB per confermare la connettività.
 // È idempotente: dopo la prima connessione, ulteriori chiamate ritornano immediatamente.
 const connectDB = async () => {
@@ -44,14 +45,16 @@ const connectDB = async () => {
         // Esegue una semplice query di health-check senza trattenere un client
         await pool.query('SELECT 1');
         isConnected = true;
+        lastError = null;
         console.log('✅ Connesso al database PostgreSQL.');
     } catch (err) {
         console.error('ERRORE: Connessione al database fallita!', err.message);
         console.error('Verifica che PostgreSQL sia avviato e le variabili .env siano corrette.');
+        lastError = { message: err.message, code: err.code || null };
         throw err;
     }
 };
 
-const getDBStatus = () => ({ connected: isConnected, via: connectionString ? 'connectionString' : 'envParams' });
+const getDBStatus = () => ({ connected: isConnected, via: connectionString ? 'connectionString' : 'envParams', error: lastError });
 
 module.exports = { connectDB, pool, getDBStatus };

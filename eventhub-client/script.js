@@ -26,8 +26,8 @@ document.addEventListener('DOMContentLoaded', () => {
     const no18Page = document.getElementById('no18-page');
     let no18OverlayEl = null;
     let no18ImageAvailable = false;
-    let no18ImageSrc = '/public/Homeno18.jpg';
-    const NO18_CANDIDATE_PATHS = ['/public/Homeno18.jpg','Homeno18.jpg','/Homeno18.jpg','public/Homeno18.jpg'];
+    let no18ImageSrc = 'Homeno18.jpg';
+    const NO18_CANDIDATE_PATHS = ['Homeno18.jpg','./Homeno18.jpg','/Homeno18.jpg','public/Homeno18.jpg','/public/Homeno18.jpg'];
     async function preloadNo18(src) {
         try {
             const ok = await new Promise((resolve) => {
@@ -58,9 +58,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     function isAuthenticated() { return !!localStorage.getItem('token'); }
     function showAgeGateIfNeeded() {
-        const accepted = localStorage.getItem('ageGateAccepted') === '1' || getCookie('ageGateAccepted') === '1';
-        const force = isTestMode();
-        if ((force || (!accepted && !isAuthenticated())) && ageOverlay) {
+        if (ageOverlay) {
             ageOverlay.hidden = false;
             ageOverlay.classList.add('open');
             document.body.style.overflow = 'hidden';
@@ -68,12 +66,6 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     if (ageEnter) {
         ageEnter.addEventListener('click', () => {
-            const test = isTestMode();
-            if (!test) {
-                localStorage.setItem('ageGateAccepted', '1');
-                localStorage.setItem('ageGateMeta', JSON.stringify({ choice: 'enter', timestamp: new Date().toISOString() }));
-                setCookie('ageGateAccepted','1');
-            }
             if (ageOverlay) {
                 ageOverlay.classList.remove('open');
                 setTimeout(() => { ageOverlay.hidden = true; document.body.style.overflow = ''; }, 240);
@@ -83,18 +75,46 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     if (ageExit) {
         ageExit.addEventListener('click', () => {
-            const test = isTestMode();
-            if (!test) {
-                localStorage.removeItem('ageGateAccepted');
-                localStorage.setItem('ageGateMeta', JSON.stringify({ choice: 'exit', timestamp: new Date().toISOString() }));
-                setCookie('ageGateAccepted','',-1);
-            }
             if (ageOverlay) { ageOverlay.classList.remove('open'); ageOverlay.hidden = true; }
             openNo18Overlay();
         });
     }
     if (ageGateNoticeBtn) { ageGateNoticeBtn.addEventListener('click', () => showPage(noticePage)); }
     showAgeGateIfNeeded();
+    (function initAgeGateIntegrity(){
+        try {
+            const overlay = document.getElementById('age-gate-overlay');
+            if (!overlay) return;
+            const titleEl = document.getElementById('age-gate-title');
+            const enterEl = document.getElementById('age-enter');
+            const exitEl = document.getElementById('age-exit');
+            const expected = {
+                title: 'Questo è un sito per adulti',
+                enter: 'Ho 18 anni o più - Entra',
+                exit: 'Ho meno di 18 anni - Esci'
+            };
+            function notify(msg) {
+                try { showToast(msg, 'error'); } catch(_) { alert(msg); }
+            }
+            function record(detail) {
+                try {
+                    const arr = JSON.parse(localStorage.getItem('ageGateTamperLog') || '[]');
+                    arr.push({ t: new Date().toISOString(), detail });
+                    localStorage.setItem('ageGateTamperLog', JSON.stringify(arr));
+                } catch(_) {}
+                console.error('AGE_GATE_TAMPER', detail);
+                notify('Alterazione rilevata nella finestra età');
+            }
+            function assert() {
+                if (titleEl && titleEl.textContent !== expected.title) { titleEl.textContent = expected.title; record({ field: 'title' }); }
+                if (enterEl && enterEl.textContent !== expected.enter) { enterEl.textContent = expected.enter; record({ field: 'enter' }); }
+                if (exitEl && exitEl.textContent !== expected.exit) { exitEl.textContent = expected.exit; record({ field: 'exit' }); }
+            }
+            assert();
+            const mo = new MutationObserver(() => { assert(); });
+            mo.observe(overlay, { subtree: true, childList: true, characterData: true, attributes: true });
+        } catch(_) {}
+    })();
 
     const homePage = document.getElementById('home-page');
     const eventDetailPage = document.getElementById('event-detail-page');
@@ -442,7 +462,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     })();
 
-    // Test di connettività al backend
+    // Test di connettività al backend con messaggi dettagliati
     apiRequest('/health', { timeoutMs: 2500, retry: 1 })
         .then((h) => {
             try {
@@ -450,7 +470,12 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (ok) {
                     console.log('Connessione al backend riuscita!', h);
                     if (!h.dbConnected) {
-                        showToast('Database non disponibile: modalità offline. Alcuni dati potrebbero essere incompleti.', 'warning');
+                        const via = h.dbVia ? `via: ${h.dbVia}` : '';
+                        const err = h.dbError && h.dbError.message ? ` (errore: ${h.dbError.message}${h.dbError.code ? ' ['+h.dbError.code+']' : ''})` : '';
+                        showToast(`Database non disponibile: modalità offline. Alcuni dati potrebbero essere incompleti. ${via}${err}`, 'warning');
+                    } else {
+                        const via = h.dbVia ? `via: ${h.dbVia}` : '';
+                        console.log(`DB connesso ${via}`);
                     }
                 }
             } catch (_) {}
@@ -757,6 +782,18 @@ document.addEventListener('DOMContentLoaded', () => {
             fetchAdminUsers();
         }
     }
+
+    (function initOAuthButtons(){
+        try {
+            const githubBtn = document.getElementById('github-login-btn');
+            if (githubBtn) {
+                githubBtn.addEventListener('click', () => {
+                    const origin = API_ORIGIN;
+                    window.location.href = `${origin}/api/auth/github`;
+                });
+            }
+        } catch(_) {}
+    })();
 
     async function fetchAdminEvents() {
         const token = localStorage.getItem('token');
@@ -1700,41 +1737,3 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 });
-    async function preloadImage(src) {
-        try {
-            const ok = await new Promise((resolve) => {
-                const im = new Image();
-                im.onload = () => resolve(true);
-                im.onerror = () => resolve(false);
-                im.src = src;
-            });
-            return ok;
-        } catch (_) {
-            return false;
-        }
-    }
-    (async () => { no18ImageAvailable = await preloadImage(no18ImageSrc); })();
-    async function runNo18ImageTest() {
-        try {
-            const ok = await preloadImage(no18ImageSrc);
-            if (!ok) throw new Error('Homeno18.jpg non raggiungibile');
-            const img = new Image();
-            img.src = no18ImageSrc;
-            await new Promise((res, rej) => { img.onload = res; img.onerror = rej; });
-            if (!(img.naturalWidth > 0 && img.naturalHeight > 0)) throw new Error('Dimensioni immagine non valide');
-            console.log('TEST_NO18_IMAGE_PASS', JSON.stringify({ w: img.naturalWidth, h: img.naturalHeight }));
-        } catch (err) {
-            console.error('TEST_NO18_IMAGE_FAIL', err && err.message ? err.message : err);
-        }
-    }
-    if (localStorage.getItem('runNo18ImageTest') === '1') {
-        setTimeout(runNo18ImageTest, 120);
-    }
-    function isTestMode() {
-        try {
-            const url = new URL(window.location.href);
-            const qp = url.searchParams.get('ageGateTestMode');
-            if (qp === '1') localStorage.setItem('ageGateTestMode', '1');
-        } catch (_) {}
-        return localStorage.getItem('ageGateTestMode') === '1';
-    }

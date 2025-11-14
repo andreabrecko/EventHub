@@ -28,6 +28,13 @@ router.get('/failure', (req, res) => {
   res.status(401).json({ error: 'OAuth authentication failed' });
 });
 
+// Provider availability
+router.get('/providers', (req, res) => {
+  const googleEnabled = !!(process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET && process.env.GOOGLE_CALLBACK_URL);
+  const githubEnabled = !!(process.env.GITHUB_CLIENT_ID && process.env.GITHUB_CLIENT_SECRET && process.env.GITHUB_CALLBACK_URL);
+  res.json({ google: googleEnabled, github: githubEnabled });
+});
+
 module.exports = router;
 // File: src/routes/oauthRoutes.js
 // Autenticazione OAuth (Google, GitHub) integrata con Passport.
