@@ -286,6 +286,15 @@ const createEvent = async (req, res) => {
 // --- B.4 Lista eventi pubblici e filtri ---
 const getEvents = async (req, res) => {
     const { category_id, location, date } = req.query; 
+    const showUnapproved = String(process.env.SHOW_UNAPPROVED || '').toLowerCase() === 'true';
+
+    // Determina dinamicamente la colonna del creatore (user_id o creator_id)
+    let ownerCol = 'user_id';
+    try {
+        const colsRes = await pool.query("SELECT column_name FROM information_schema.columns WHERE table_name = 'events'");
+        const cols = colsRes.rows.map(r => String(r.column_name).toLowerCase());
+        ownerCol = cols.includes('user_id') ? 'user_id' : (cols.includes('creator_id') ? 'creator_id' : 'user_id');
+    } catch (_) {}
 
     let query = `
         SELECT 
@@ -295,15 +304,18 @@ const getEvents = async (req, res) => {
             (SELECT COUNT(*) FROM Registrations r WHERE r.event_id = e.id) as current_registrations,
             COALESCE(p.photos, '[]'::json) AS photos
         FROM Events e
-        JOIN Users u ON COALESCE(e.user_id, e.creator_id) = u.id
+        JOIN Users u ON e.${ownerCol} = u.id
         LEFT JOIN Categories c ON e.category_id = c.id
         LEFT JOIN LATERAL (
             SELECT json_agg(ep.file_path) AS photos
             FROM EventPhotos ep
             WHERE ep.event_id = e.id
         ) p ON TRUE
-        WHERE e.is_approved = TRUE -- Mostra solo eventi approvati (Macro D)
+        WHERE 1=1
     `;
+    if (!showUnapproved) {
+        query += ` AND e.is_approved = TRUE`; // Mostra solo eventi approvati in produzione
+    }
     const params = [];
     let paramIndex = 1;
 

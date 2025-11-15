@@ -56,7 +56,7 @@ process.on('uncaughtException', (err, origin) => {
     server.close(() => process.exit(1));
 });
 
-const { connectDB, pool } = require('./src/config/db');
+const { connectDBWithRetry, startKeepAlivePing, pool } = require('./src/config/db');
 const { initSchema } = require('./src/config/initSchema');
 const { seedCategories } = require('./src/controllers/eventController');
 const { validateEmailEnv, verifySMTP } = require('./src/services/emailService');
@@ -75,12 +75,20 @@ const updateAdminRole = async (email, newPasswordHash) => {
 };
 
 const startServer = async () => {
-    let dbConnected = false;
-    try {
-        await connectDB();
-        dbConnected = true;
-    } catch (err) {
+    let dbConnected = await connectDBWithRetry({ retries: 5, delayMs: 2000 });
+    if (!dbConnected) {
         console.error('Avvio senza DB: impossibile connettersi, il server continuerà a servire risorse statiche e API non-DB.');
+        // Tentativi di riconnessione periodici in background
+        const reconnector = setInterval(async () => {
+            const ok = await connectDBWithRetry({ retries: 1, delayMs: 3000 });
+            if (ok) {
+                console.log('✅ Riconnessione al DB riuscita. Inizializzo schema e seed...');
+                clearInterval(reconnector);
+                try { await initSchema(); } catch (err) { console.error('Inizializzazione schema saltata per errore DB:', err?.message || err); }
+                try { await seedCategories(); } catch (err) { console.error('Seed categorie saltato per errore DB:', err?.message || err); }
+            }
+        }, 15000);
+        reconnector.unref();
     }
 
     if (dbConnected) {
@@ -109,6 +117,9 @@ const startServer = async () => {
             console.error('Aggiornamento ruolo admin saltato per errore DB:', err?.message || err);
         }
     }
+
+    // Attiva keepalive ping per mantenere la connessione e aggiornare lo stato
+    startKeepAlivePing(30000);
 
     try {
         const v = validateEmailEnv();

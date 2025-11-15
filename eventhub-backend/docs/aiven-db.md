@@ -8,6 +8,7 @@ Questa applicazione supporta una modalità di connessione alternativa al databas
 - `DATABASE_URL` (alternativa): stringa di connessione compatibile (Heroku/Aiven)
 - `DB_SSL` (default: `true` in produzione): abilita SSL per connessioni parametriche
 - `DB_CA_CERT` (opzionale): contenuto del certificato CA in PEM per validare SSL
+- `DB_CA_CERT_PATH` (opzionale): percorso locale al file PEM della CA (es. `C:\\certs\\aiven-ca.pem`)
 
 Per connessione parametrica (se non usi la stringa completa), imposta:
 
@@ -37,6 +38,12 @@ DB_CA_CERT=-----BEGIN CERTIFICATE-----\n...\n-----END CERTIFICATE-----
 
 3. Avvia il backend: `npm run start`
 4. Verifica lo stato: `GET http://localhost:3000/api/health` deve mostrare `dbConnected: true`.
+
+### Diagnostica rapida
+
+- `GET /api/db/status` → espone stato connessione e modalità (connectionString/parametri).
+- `GET /api/db/ping` → esegue `SELECT 1`.
+- `POST /api/db/smoke` → inserimento/eliminazione categoria di prova.
 
 ### Note
 

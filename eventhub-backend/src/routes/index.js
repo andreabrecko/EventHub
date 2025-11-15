@@ -19,16 +19,26 @@ router.use((req, res, next) => {
 const userRoutes = require('./userRoutes');
 const eventRoutes = require('./eventRoutes');
 const adminRoutes = require('./adminRoutes'); // <--- AGGIUNTA
+const dbRoutes = require('./dbRoutes');
 
 // --- Montaggio Rotte ---
 // Tutti gli endpoint esposti da questi router saranno prefissati da /api nel file app.js
 router.use('/users', userRoutes); 
 router.use('/events', eventRoutes); 
 router.use('/admin', adminRoutes); // <--- AGGIUNTA
+router.use('/db', dbRoutes);
 
-// Endpoint di health per verificare disponibilità API
+// Endpoint di health per verificare disponibilità API + stato DB
+const { getDBStatus } = require('../config/db');
 router.get('/health', (req, res) => {
-    res.status(200).json({ status: 'API running', service: 'EventHub' });
+    const db = getDBStatus();
+    res.status(200).json({
+        status: 'API running',
+        service: 'EventHub',
+        dbConnected: !!db.connected,
+        dbVia: db.via,
+        dbError: db.error || null,
+    });
 });
 
 module.exports = router;
