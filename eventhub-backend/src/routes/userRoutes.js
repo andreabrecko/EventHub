@@ -11,7 +11,7 @@ const rateLimiter = require('../middleware/rateLimiter');
 
 // Rotte pubbliche
 router.post('/register', rateLimiter({ windowMs: 60 * 60 * 1000, max: 20 }), userController.registerUser);
-router.post('/login', rateLimiter.authLimiter, userController.loginUser);
+router.post('/login', userController.loginUser);
 router.post('/logout', authMiddleware.protect, userController.logoutUser);
 router.patch('/notifications', authMiddleware.protect, userController.toggleLoginNotifications);
 
