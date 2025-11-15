@@ -208,6 +208,20 @@ const swaggerSpec = {
         },
         responses: { '200': { description: 'Aggiornato' }, '404': { description: 'Non trovato' } }
       }
+    },
+    '/users/me/events': {
+      get: {
+        summary: 'Eventi creati dall’utente autenticato',
+        tags: ['Users'],
+        responses: { '200': { description: 'Lista eventi creati' }, '401': { description: 'Non autenticato' } }
+      }
+    },
+    '/users/me/registrations': {
+      get: {
+        summary: 'Eventi a cui l’utente autenticato è iscritto',
+        tags: ['Users'],
+        responses: { '200': { description: 'Lista eventi iscritti' }, '401': { description: 'Non autenticato' } }
+      }
     }
   }
 };

@@ -286,7 +286,6 @@ const createEvent = async (req, res) => {
 // --- B.4 Lista eventi pubblici e filtri ---
 const getEvents = async (req, res) => {
     const { category_id, location, date } = req.query; 
-    const showUnapproved = String(process.env.SHOW_UNAPPROVED || '').toLowerCase() === 'true';
 
     // Determina dinamicamente la colonna del creatore (user_id o creator_id)
     let ownerCol = 'user_id';
@@ -313,9 +312,8 @@ const getEvents = async (req, res) => {
         ) p ON TRUE
         WHERE 1=1
     `;
-    if (!showUnapproved) {
-        query += ` AND e.is_approved = TRUE`; // Mostra solo eventi approvati in produzione
-    }
+    // Mostra solo eventi approvati
+    query += ` AND e.is_approved = TRUE`;
     const params = [];
     let paramIndex = 1;
 
@@ -495,6 +493,19 @@ const registerForEvent = async (req, res) => {
             });
             io.emit('registrationChangeGlobal', { eventId: event_id, userId: user_id, username: username || 'Utente', action: 'registered' });
         }
+        // Email di conferma iscrizione
+        try {
+            const userRes = await pool.query('SELECT email FROM Users WHERE id = $1', [user_id]);
+            const eventRes = await pool.query('SELECT title FROM Events WHERE id = $1', [event_id]);
+            const to = userRes.rows[0]?.email;
+            const title = eventRes.rows[0]?.title;
+            if (to && title) {
+                const { sendRegistrationConfirmationEmail } = require('../services/emailService');
+                await sendRegistrationConfirmationEmail({ to, action: 'register', eventTitle: title, when: Date.now(), pool, userId: user_id });
+            }
+        } catch (e) {
+            console.error('Errore invio email conferma registrazione:', e?.message || e);
+        }
     } catch (err) {
         console.error("Errore iscrizione evento:", err);
         res.status(500).json({ error: 'Errore interno del server.' });
@@ -527,6 +538,19 @@ const unregisterFromEvent = async (req, res) => {
                 message: `❌ ${username} ha annullato l'iscrizione.`
             });
             io.emit('registrationChangeGlobal', { eventId: event_id, userId: user_id, username: username || 'Utente', action: 'unregistered' });
+        }
+        // Email di conferma annullamento
+        try {
+            const userRes = await pool.query('SELECT email FROM Users WHERE id = $1', [user_id]);
+            const eventRes = await pool.query('SELECT title FROM Events WHERE id = $1', [event_id]);
+            const to = userRes.rows[0]?.email;
+            const title = eventRes.rows[0]?.title;
+            if (to && title) {
+                const { sendRegistrationConfirmationEmail } = require('../services/emailService');
+                await sendRegistrationConfirmationEmail({ to, action: 'unregister', eventTitle: title, when: Date.now(), pool, userId: user_id });
+            }
+        } catch (e) {
+            console.error('Errore invio email conferma annullamento:', e?.message || e);
         }
 
     } catch (err) {
@@ -619,9 +643,16 @@ const reportEvent = async (req, res) => {
             );
         `);
         const ins = await pool.query(
-            "INSERT INTO ReportedEvents (event_id, reporter_id, reason) VALUES ($1,$2,$3) ON CONFLICT (event_id, reporter_id) DO UPDATE SET reason = EXCLUDED.reason, status = 'pending' RETURNING id",
+            "INSERT INTO ReportedEvents (event_id, reporter_id, reason) VALUES ($1,$2,$3) ON CONFLICT (event_id, reporter_id) DO UPDATE SET reason = EXCLUDED.reason, status = 'pending' RETURNING id, event_id, reporter_id, reason, status, created_at",
             [eventId, reporterId, reason || null]
         );
+        // Notifica in tempo reale agli admin
+        try {
+            const io = socketManager.getIoInstance();
+            if (io) {
+                io.to('admins').emit('admin:reportCreated', { report: ins.rows[0] });
+            }
+        } catch (_) {}
         res.status(201).json({ message: 'Segnalazione inviata.', report_id: ins.rows[0].id });
     } catch (err) {
         console.error('Errore segnalazione evento:', err?.message || err);

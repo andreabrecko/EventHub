@@ -37,6 +37,7 @@
             <div id="user-info" style="display: none;">
                 <button id="logout-button">Logout</button>
                 <button id="admin-dashboard-button" style="display: none;">Pannello Admin</button>
+                <button id="my-events-button" style="display: none;">I miei eventi</button>
                 <button id="create-event-button" style="display: none;">Crea un nuovo evento</button>
                 <label id="login-notify-toggle" style="display:none; margin-left:8px;">
                     <input type="checkbox" id="login-notify-checkbox"> Notifiche login
@@ -104,6 +105,14 @@
                         </div>
                     </div>
                     <div id="event-detail-more-actions" class="more-actions"></div>
+                    <div id="event-chat" class="event-chat" style="margin-top:16px;">
+                        <h4>Chat dell'evento</h4>
+                        <ul id="event-chat-list" class="chat-list"></ul>
+                        <div class="chat-input-row" style="display:flex; gap:8px; margin-top:8px;">
+                            <input id="event-chat-input" type="text" placeholder="Scrivi un messaggio..." style="flex:1; padding:0.5em;" />
+                            <button id="event-chat-send">Invia</button>
+                        </div>
+                    </div>
                 </section>
             </div>
         </div>
@@ -178,6 +187,20 @@
                 <button type="submit">Crea Evento</button>
                 <p id="create-event-message"></p>
             </form>
+        </div>
+
+        <div id="my-events-page" class="page" style="display:none;">
+            <h1>I miei eventi</h1>
+            <div class="my-events-columns" style="display:grid; grid-template-columns: 1fr 1fr; gap:16px;">
+                <div class="my-col">
+                    <h2>Creati da me</h2>
+                    <div id="my-created-events" class="event-list"></div>
+                </div>
+                <div class="my-col">
+                    <h2>A cui partecipo</h2>
+                    <div id="my-registered-events" class="event-list"></div>
+                </div>
+            </div>
         </div>
 
         <div id="admin-page" class="page" style="display: none;">

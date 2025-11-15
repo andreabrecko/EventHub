@@ -14,5 +14,9 @@ router.patch('/notifications', authMiddleware.protect, userController.toggleLogi
 
 // Rotta protetta (esempio): ritorna i dati utente estratti dal token
 router.get('/me', authMiddleware.protect, userController.getMe);
+// Eventi creati dall'utente
+router.get('/me/events', authMiddleware.protect, userController.getMyEvents);
+// Eventi a cui l'utente è registrato
+router.get('/me/registrations', authMiddleware.protect, userController.getMyRegistrations);
 
 module.exports = router;

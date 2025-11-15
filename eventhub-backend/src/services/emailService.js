@@ -230,3 +230,84 @@ module.exports = { sendVerificationEmail, verifySMTP, sendVerificationCodeEmail,
 // Servizio SMTP per verifica email utenti.
 // Supporta modalità mock (jsonTransport) e dry-run per sviluppo/sistemi senza SMTP.
 // Espone: verifySMTP() per testare la connessione, sendVerificationEmail() per inviare link di conferma.
+
+// --- Extra: Email di benvenuto e approvazione evento ---
+async function sendWelcomeEmail({ to, username, pool, userId }) {
+  const from = process.env.FROM_EMAIL || 'no-reply@eventhub.local';
+  const subject = 'Benvenuto su EventHub';
+  const html = buildBaseTemplate(`
+    <h2>Benvenuto ${username}</h2>
+    <p>La tua registrazione su EventHub è andata a buon fine.</p>
+    <p>Puoi accedere e creare/partecipare agli eventi fin da subito.</p>
+  `);
+  if (isDryRun) {
+    console.log('[SMTP dry-run] Invio benvenuto simulato:', { to, subject });
+    return;
+  }
+  const maxWaitMs = Number(process.env.EMAIL_SEND_TIMEOUT_MS || 8000);
+  const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error(`Timeout invio email (> ${maxWaitMs} ms)`)), maxWaitMs));
+  const sendFn = async () => {
+    await Promise.race([
+      transporter.sendMail({ from, to, subject, html }),
+      timeoutPromise,
+    ]);
+  };
+  await sendFn();
+  try { if (pool) await logEmail({ pool, userId, email: to, type: 'welcome', subject, status: 'sent' }); } catch (_) {}
+}
+
+async function sendEventApprovalEmail({ to, title, isApproved, pool, userId }) {
+  const from = process.env.FROM_EMAIL || 'no-reply@eventhub.local';
+  const subject = isApproved ? 'Evento approvato' : 'Evento rifiutato';
+  const html = buildBaseTemplate(`
+    <h2>${subject}</h2>
+    <p>Stato dell'evento: <strong>${title}</strong></p>
+    <p>${isApproved ? 'Il tuo evento è stato approvato ed è ora visibile pubblicamente.' : 'Il tuo evento non è stato approvato. Puoi modificarlo e riprovare.'}</p>
+  `);
+  if (isDryRun) {
+    console.log('[SMTP dry-run] Invio approvazione simulato:', { to, subject, title, isApproved });
+    return;
+  }
+  const maxWaitMs = Number(process.env.EMAIL_SEND_TIMEOUT_MS || 8000);
+  const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error(`Timeout invio email (> ${maxWaitMs} ms)`)), maxWaitMs));
+  const sendFn = async () => {
+    await Promise.race([
+      transporter.sendMail({ from, to, subject, html }),
+      timeoutPromise,
+    ]);
+  };
+  await sendFn();
+  try { if (pool) await logEmail({ pool, userId, email: to, type: 'event_approval', subject, status: 'sent', meta: { title, isApproved } }); } catch (_) {}
+}
+
+module.exports.sendWelcomeEmail = sendWelcomeEmail;
+module.exports.sendEventApprovalEmail = sendEventApprovalEmail;
+
+// --- Email conferma registrazione/annullamento evento ---
+async function sendRegistrationConfirmationEmail({ to, action, eventTitle, when, pool, userId }) {
+  const from = process.env.FROM_EMAIL || 'no-reply@eventhub.local';
+  const isRegister = String(action) === 'register';
+  const subject = isRegister ? 'Iscrizione all\'evento confermata' : 'Cancellazione iscrizione all\'evento';
+  const html = buildBaseTemplate(`
+    <h2>${subject}</h2>
+    <p>Evento: <strong>${eventTitle}</strong></p>
+    <p>${isRegister ? 'Ti sei correttamente iscritto a questo evento.' : 'Hai annullato la tua iscrizione a questo evento.'}</p>
+    <p class="muted">Data operazione: ${new Date(when || Date.now()).toLocaleString()}</p>
+  `);
+  if (isDryRun) {
+    console.log('[SMTP dry-run] Invio conferma registrazione simulato:', { to, subject, eventTitle, action });
+    return;
+  }
+  const maxWaitMs = Number(process.env.EMAIL_SEND_TIMEOUT_MS || 8000);
+  const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error(`Timeout invio email (> ${maxWaitMs} ms)`)), maxWaitMs));
+  const sendFn = async () => {
+    await Promise.race([
+      transporter.sendMail({ from, to, subject, html }),
+      timeoutPromise,
+    ]);
+  };
+  await sendFn();
+  try { if (pool) await logEmail({ pool, userId, email: to, type: 'registration_confirm', subject, status: 'sent', meta: { eventTitle, action, when } }); } catch (_) {}
+}
+
+module.exports.sendRegistrationConfirmationEmail = sendRegistrationConfirmationEmail;

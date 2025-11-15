@@ -5,6 +5,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const logoutButton = document.getElementById('logout-button');
     const createEventButton = document.getElementById('create-event-button');
     const adminDashboardButton = document.getElementById('admin-dashboard-button'); // Bottone per admin dashboard
+    const myEventsButton = document.getElementById('my-events-button');
     const backToHomeButton = document.getElementById('back-to-home-button'); // Bottone per tornare alla home
 
     const authLinks = document.getElementById('auth-links');
@@ -122,6 +123,9 @@ document.addEventListener('DOMContentLoaded', () => {
     const loginPage = document.getElementById('login-page');
     const createEventPage = document.getElementById('create-event-page');
     const adminPage = document.getElementById('admin-page');
+    const myEventsPage = document.getElementById('my-events-page');
+    const myCreatedEvents = document.getElementById('my-created-events');
+    const myRegisteredEvents = document.getElementById('my-registered-events');
 
     const registerForm = document.getElementById('register-form');
     
@@ -207,6 +211,7 @@ document.addEventListener('DOMContentLoaded', () => {
         loginPage.style.display = 'none';
         createEventPage.style.display = 'none';
         adminPage.style.display = 'none';
+        if (myEventsPage) myEventsPage.style.display = 'none';
         if (noticePage) noticePage.style.display = 'none';
         if (no18Page) no18Page.style.display = 'none';
 
@@ -330,18 +335,48 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function normalizePhotoUrl(url) {
         if (!url) return '';
+        // Already absolute
         if (/^https?:\/\//i.test(url)) return url;
-        if (url.startsWith('/uploads/')) return `${API_ORIGIN}${url}`;
-        return url;
+        // Normalize slashes
+        let u = String(url).replace(/\\/g, '/');
+        // Handle common relative forms
+        if (u.startsWith('/uploads/')) return `${API_ORIGIN}${u}`;
+        if (u.startsWith('uploads/')) return `${API_ORIGIN}/${u}`;
+        if (u.startsWith('/api/uploads/')) return `${API_ORIGIN}${u.replace('/api', '')}`;
+        if (u.startsWith('events/')) return `${API_ORIGIN}/uploads/${u}`;
+        return u;
+    }
+
+    function createEventImage(src, alt) {
+        const img = document.createElement('img');
+        img.loading = 'lazy';
+        img.alt = alt || 'Evento';
+        img.src = src || PLACEHOLDER_PHOTO;
+        img.onerror = () => {
+            const tried = img.src;
+            console.warn('Immagine evento non caricata, fallback al placeholder:', tried);
+            img.src = PLACEHOLDER_PHOTO;
+        };
+        return img;
     }
     function extractPhotos(raw) {
         let photos = [];
         if (Array.isArray(raw)) {
-            photos = raw;
+            photos = raw.map(p => {
+                if (typeof p === 'string') return p;
+                if (p && typeof p === 'object') return p.file_path || p.url || '';
+                return '';
+            }).filter(Boolean);
         } else if (typeof raw === 'string') {
             try {
                 const parsed = JSON.parse(raw);
-                if (Array.isArray(parsed)) photos = parsed;
+                if (Array.isArray(parsed)) {
+                    photos = parsed.map(p => {
+                        if (typeof p === 'string') return p;
+                        if (p && typeof p === 'object') return p.file_path || p.url || '';
+                        return '';
+                    }).filter(Boolean);
+                }
             } catch {}
         }
         if (!Array.isArray(photos) || photos.length === 0) {
@@ -526,6 +561,7 @@ document.addEventListener('DOMContentLoaded', () => {
             logoutButton.style.display = 'block';
             createEventButton.style.display = userRole === 'admin' ? 'none' : 'block';
             adminDashboardButton.style.display = userRole === 'admin' ? 'block' : 'none';
+            if (myEventsButton) myEventsButton.style.display = userRole === 'admin' ? 'none' : 'inline-block';
             welcomeMessage.textContent = `Benvenuto, ${localStorage.getItem('username')}${userRole === 'admin' ? ' (admin)' : ''}`;
             welcomeMessage.style.display = 'block';
             if (loginNotifyToggle) loginNotifyToggle.style.display = 'inline-block';
@@ -546,6 +582,7 @@ document.addEventListener('DOMContentLoaded', () => {
             logoutButton.style.display = 'none';
             createEventButton.style.display = 'none';
             adminDashboardButton.style.display = 'none';
+            if (myEventsButton) myEventsButton.style.display = 'none';
             welcomeMessage.style.display = 'none';
             if (loginNotifyToggle) loginNotifyToggle.style.display = 'none';
         }
@@ -694,7 +731,10 @@ document.addEventListener('DOMContentLoaded', () => {
     (function initAdminSocketListeners() {
         const role = localStorage.getItem('role');
         if (!socket || role !== 'admin') return;
+        // Join the admins room to receive targeted notifications from the server
+        try { socket.emit('joinAdmin'); } catch (_) {}
         const refresh = () => { try { fetchAdminEvents(); } catch {} };
+        // Fallback listeners (legacy names if emitted globally)
         socket.on('event_created', (payload = {}) => {
             showToast(`Nuovo evento da revisionare: ${payload.title || ''}`.trim(), 'warn');
             refresh();
@@ -709,6 +749,36 @@ document.addEventListener('DOMContentLoaded', () => {
         });
         socket.on('event_deleted', (payload = {}) => {
             showToast(`Evento eliminato: ${payload.title || ''}`.trim(), 'warn');
+            refresh();
+        });
+        // Primary listeners aligned with server-side emissions to the 'admins' room
+        socket.on('admin:eventCreated', (payload = {}) => {
+            const title = (payload && payload.event && payload.event.title) || payload.title || '';
+            showToast(`Nuovo evento da revisionare: ${title}`.trim(), 'warn');
+            refresh();
+        });
+        socket.on('admin:eventUpdated', (payload = {}) => {
+            const ev = payload.event || payload || {};
+            const title = ev.title || '';
+            const approved = ev.is_approved === true;
+            showToast(`${approved ? 'Evento approvato' : 'Evento rifiutato'}: ${title}`.trim(), approved ? 'success' : 'warn');
+            refresh();
+        });
+        socket.on('admin:eventDeleted', (payload = {}) => {
+            showToast('Evento eliminato'.trim(), 'warn');
+            refresh();
+        });
+
+        // Admin report notifications
+        socket.on('admin:reportCreated', (payload = {}) => {
+            const eventId = payload.eventId || (payload.report && payload.report.event_id);
+            showToast(`Nuova segnalazione su evento ${eventId ? '#' + eventId : ''}`.trim(), 'warn');
+            refresh();
+        });
+        socket.on('admin:reportResolved', (payload = {}) => {
+            const status = (payload && payload.status) || '';
+            const msg = status === 'removed' ? 'Segnalazione risolta: evento eliminato' : 'Segnalazione risolta: evento mantenuto';
+            showToast(msg, status === 'removed' ? 'warn' : 'info');
             refresh();
         });
     })();
@@ -768,6 +838,7 @@ document.addEventListener('DOMContentLoaded', () => {
         createEventPage.style.display = 'none';
         adminPage.style.display = 'none';
         eventDetailPage.style.display = 'none';
+        if (myEventsPage) myEventsPage.style.display = 'none';
 
         pageToShow.style.display = 'block';
         currentView = pageToShow.id.replace('-page', '');
@@ -780,6 +851,9 @@ document.addEventListener('DOMContentLoaded', () => {
         if (pageToShow === adminPage) {
             fetchAdminEvents();
             fetchAdminUsers();
+        }
+        if (pageToShow === myEventsPage) {
+            fetchMyEventsAndRegistrations();
         }
     }
 
@@ -832,6 +906,61 @@ document.addEventListener('DOMContentLoaded', () => {
         } catch (error) {
             console.error('Errore nel recupero degli utenti admin:', error.message || error);
         }
+    }
+
+    async function fetchMyEventsAndRegistrations() {
+        try {
+            const [createdRes, regRes] = await Promise.all([
+                apiRequest('/users/me/events', { useAuth: true, timeoutMs: 8000 }),
+                apiRequest('/users/me/registrations', { useAuth: true, timeoutMs: 8000 })
+            ]);
+            const created = Array.isArray(createdRes?.events) ? createdRes.events : (Array.isArray(createdRes) ? createdRes : []);
+            const registered = Array.isArray(regRes?.events) ? regRes.events : (Array.isArray(regRes) ? regRes : []);
+            displayMyEventsList(myCreatedEvents, created, { showCreator: false });
+            displayMyEventsList(myRegisteredEvents, registered, { showCreator: true });
+        } catch (error) {
+            console.error('Errore nel recupero dei miei eventi/registrazioni:', error.message || error);
+            if (myCreatedEvents) myCreatedEvents.innerHTML = '<p>Errore nel caricamento dei tuoi eventi.</p>';
+            if (myRegisteredEvents) myRegisteredEvents.innerHTML = '<p>Errore nel caricamento delle tue iscrizioni.</p>';
+        }
+    }
+
+    function displayMyEventsList(container, events, opts = {}) {
+        if (!container) return;
+        container.innerHTML = '';
+        if (!Array.isArray(events) || events.length === 0) {
+            container.innerHTML = '<p>Nessun evento trovato.</p>';
+            return;
+        }
+        const showCreator = !!opts.showCreator;
+        events.forEach(event => {
+            const card = document.createElement('div');
+            card.className = 'event-card';
+            const photos = extractPhotos(event.photos);
+            const firstPhoto = normalizePhotoUrl(photos[0]);
+            const dateStr = event.event_date ? new Date(event.event_date).toLocaleString() : '';
+            const categoryName = event.category_name || 'N/A';
+            const count = Number(event.current_registrations || 0);
+            const capacity = Number(event.capacity || 0);
+            card.innerHTML = `
+                <div class="card-image">
+                    <div class="reg-badge" aria-label="Iscritti" aria-live="polite">${count}${capacity ? '/' + capacity : ''}</div>
+                </div>
+                <div class="event-card-content">
+                    ${showCreator ? `<div class="creator-label">${event.creator_username || ''}</div>` : ''}
+                    <h3>${event.title}</h3>
+                    <p class="event-date-time">${dateStr}</p>
+                    <p class="event-location">${event.location || ''}</p>
+                    <p class="event-category">Categoria: ${categoryName}</p>
+                </div>
+            `;
+            const imgEl = createEventImage(firstPhoto, event.title);
+            card.querySelector('.card-image').prepend(imgEl);
+            container.appendChild(card);
+            card.addEventListener('click', () => {
+                try { showEventDetail(event); } catch(_) {}
+            });
+        });
     }
 
     function applyUsersFilter() {
@@ -1057,7 +1186,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
             eventCard.innerHTML = `
                 <div class="card-image">
-                    <img src="${firstPhoto}" alt="${event.title}">
                     <div class="reg-badge" aria-label="Iscritti" aria-live="polite">${count}${capacity ? '/' + capacity : ''}</div>
                 </div>
                 <div class="event-card-content">
@@ -1070,6 +1198,8 @@ document.addEventListener('DOMContentLoaded', () => {
                     <div class="quick-actions"></div>
                 </div>
             `;
+            const imgEl = createEventImage(firstPhoto, event.title);
+            eventCard.querySelector('.card-image').prepend(imgEl);
             eventsList.appendChild(eventCard);
 
             const actions = eventCard.querySelector('.event-actions');
@@ -1315,6 +1445,15 @@ document.addEventListener('DOMContentLoaded', () => {
         showPage(adminPage);
         fetchAdminEvents();
     });
+
+    if (myEventsButton) {
+        myEventsButton.addEventListener('click', async (e) => {
+            e.preventDefault();
+            const ok = await ensureAuthenticated();
+            if (!ok) return;
+            showPage(myEventsPage);
+        });
+    }
 
     backToHomeButton.addEventListener('click', (e) => {
         e.preventDefault();
@@ -1723,6 +1862,53 @@ document.addEventListener('DOMContentLoaded', () => {
                         }
                     }
                 });
+
+                // Chat UI references
+                const chatList = document.getElementById('event-chat-list');
+                const chatInput = document.getElementById('event-chat-input');
+                const chatSend = document.getElementById('event-chat-send');
+                if (chatList) chatList.innerHTML = '';
+
+                const escapeHtml = (s) => String(s || '').replace(/[&<>"']/g, (ch) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;','\'':'&#39;'}[ch]));
+                const renderMsg = (m) => {
+                    if (!chatList || !m) return;
+                    const li = document.createElement('li');
+                    const ts = m.created_at ? new Date(m.created_at).toLocaleTimeString() : '';
+                    const user = m.username || m.user_username || 'Utente';
+                    const text = m.message || m.text || '';
+                    li.innerHTML = `<strong>${user}</strong> <span style="opacity:0.7; font-size:0.9em;">${ts}</span><br>${escapeHtml(text)}`;
+                    chatList.appendChild(li);
+                    chatList.scrollTop = chatList.scrollHeight;
+                };
+
+                // Ricezione storia chat all'ingresso
+                socket.off('chatHistory');
+                socket.on('chatHistory', (history = []) => {
+                    if (!Array.isArray(history)) return;
+                    if (chatList) chatList.innerHTML = '';
+                    history.forEach(renderMsg);
+                });
+
+                // Nuovi messaggi broadcast
+                socket.off('newMessage');
+                socket.on('newMessage', (m = {}) => {
+                    if (String(m.eventId || m.event_id) !== String(ev.id)) return;
+                    renderMsg(m);
+                });
+
+                // Invio messaggi
+                if (chatSend) {
+                    chatSend.onclick = async () => {
+                        const ok = await ensureAuthenticated();
+                        if (!ok) return;
+                        const text = (chatInput && chatInput.value || '').trim();
+                        if (!text) return;
+                        try {
+                            socket.emit('chatMessage', { eventId: ev.id, userId, message: text });
+                            if (chatInput) chatInput.value = '';
+                        } catch (_) {}
+                    };
+                }
             } catch (_) {}
         }
     }

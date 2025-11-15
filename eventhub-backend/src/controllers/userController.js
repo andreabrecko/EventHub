@@ -53,6 +53,12 @@ exports.registerUser = async (req, res) => {
         const newUser = result.rows[0];
 
         await notifySignup({ userId: newUser.id, username: newUser.username, email: newUser.email });
+        try {
+            const { sendWelcomeEmail } = require('../services/emailService');
+            await sendWelcomeEmail({ to: newUser.email, username: newUser.username, pool, userId: newUser.id });
+        } catch (e) {
+            console.error('Errore invio email benvenuto:', e?.message || e);
+        }
 
         res.status(201).json({
             message: `Benvenuto ${newUser.username}! Registrazione completata.`,
@@ -147,6 +153,53 @@ exports.toggleLoginNotifications = async (req, res) => {
         return res.status(200).json({ message: 'Impostazione aggiornata.', enabled });
     } catch (err) {
         console.error('Errore toggle notifiche:', err);
+        return res.status(500).json({ error: 'Errore interno del server.' });
+    }
+};
+
+// --- Eventi creati dall'utente (GET /api/users/me/events)
+exports.getMyEvents = async (req, res) => {
+    try {
+        const userId = req.user.id;
+        const q = `
+            SELECT e.*, COALESCE(p.photos, '[]'::json) AS photos
+            FROM Events e
+            LEFT JOIN LATERAL (
+                SELECT json_agg(ep.file_path) AS photos
+                FROM EventPhotos ep
+                WHERE ep.event_id = e.id
+            ) p ON TRUE
+            WHERE e.user_id = $1
+            ORDER BY e.created_at DESC;
+        `;
+        const r = await pool.query(q, [userId]);
+        return res.status(200).json({ count: r.rows.length, events: r.rows });
+    } catch (err) {
+        console.error('Errore getMyEvents:', err?.message || err);
+        return res.status(500).json({ error: 'Errore interno del server.' });
+    }
+};
+
+// --- Eventi a cui l'utente è registrato (GET /api/users/me/registrations)
+exports.getMyRegistrations = async (req, res) => {
+    try {
+        const userId = req.user.id;
+        const q = `
+            SELECT e.*, COALESCE(p.photos, '[]'::json) AS photos, r.created_at AS registered_at
+            FROM Registrations r
+            JOIN Events e ON r.event_id = e.id
+            LEFT JOIN LATERAL (
+                SELECT json_agg(ep.file_path) AS photos
+                FROM EventPhotos ep
+                WHERE ep.event_id = e.id
+            ) p ON TRUE
+            WHERE r.user_id = $1
+            ORDER BY r.created_at DESC;
+        `;
+        const r = await pool.query(q, [userId]);
+        return res.status(200).json({ count: r.rows.length, events: r.rows });
+    } catch (err) {
+        console.error('Errore getMyRegistrations:', err?.message || err);
         return res.status(500).json({ error: 'Errore interno del server.' });
     }
 };

@@ -18,7 +18,7 @@ exports.approveEvent = async (req, res) => {
             UPDATE Events
             SET is_approved = $1
             WHERE id = $2
-            RETURNING id, title, is_approved;
+            RETURNING id, title, is_approved, user_id;
         `;
         const result = await pool.query(query, [isApproved, eventId]);
 
@@ -31,6 +31,17 @@ exports.approveEvent = async (req, res) => {
         const io = socketManager.getIoInstance();
         if (io) {
             io.to('admins').emit('admin:eventUpdated', { event: result.rows[0] });
+        }
+        // Invia email al creatore dell'evento
+        try {
+            const creatorRes = await pool.query('SELECT email FROM Users WHERE id = $1', [result.rows[0].user_id]);
+            const creatorEmail = creatorRes.rows[0]?.email;
+            if (creatorEmail) {
+                const { sendEventApprovalEmail } = require('../services/emailService');
+                await sendEventApprovalEmail({ to: creatorEmail, title: result.rows[0].title, isApproved, pool, userId: result.rows[0].user_id });
+            }
+        } catch (e) {
+            console.error('Errore invio email approvazione:', e?.message || e);
         }
         res.status(200).json({
             message: `Evento '${result.rows[0].title}' è stato ${action} con successo.`,
@@ -205,9 +216,18 @@ exports.resolveReport = async (req, res) => {
         if (action === 'remove') {
             await pool.query('DELETE FROM Events WHERE id = $1', [eventId]);
             await pool.query('UPDATE ReportedEvents SET status = $1 WHERE id = $2', ['removed', reportId]);
+            // Notifica gli admin della risoluzione
+            const io = socketManager.getIoInstance();
+            if (io) {
+                io.to('admins').emit('admin:reportResolved', { reportId, eventId, status: 'removed' });
+            }
             return res.status(200).json({ message: 'Evento eliminato e segnalazione chiusa.', status: 'removed' });
         } else {
             await pool.query('UPDATE ReportedEvents SET status = $1 WHERE id = $2', ['kept', reportId]);
+            const io = socketManager.getIoInstance();
+            if (io) {
+                io.to('admins').emit('admin:reportResolved', { reportId, eventId, status: 'kept' });
+            }
             return res.status(200).json({ message: 'Evento mantenuto. Segnalazione aggiornata.', status: 'kept' });
         }
     } catch (err) {
