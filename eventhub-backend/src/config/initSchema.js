@@ -20,6 +20,8 @@ async function initSchema() {
         email_verified BOOLEAN NOT NULL DEFAULT FALSE,
         verification_token TEXT,
         verification_token_expires TIMESTAMP,
+        password_reset_token TEXT,
+        password_reset_expires TIMESTAMP,
         verification_code TEXT,
         verification_code_expires TIMESTAMP,
         login_notify_enabled BOOLEAN NOT NULL DEFAULT TRUE,
@@ -30,6 +32,8 @@ async function initSchema() {
     await client.query(`ALTER TABLE IF EXISTS Users ADD COLUMN IF NOT EXISTS last_name TEXT`);
     await client.query(`ALTER TABLE IF EXISTS Users ADD COLUMN IF NOT EXISTS phone TEXT`);
     await client.query(`ALTER TABLE IF EXISTS Users ADD COLUMN IF NOT EXISTS login_notify_enabled BOOLEAN NOT NULL DEFAULT TRUE`);
+    await client.query(`ALTER TABLE IF EXISTS Users ADD COLUMN IF NOT EXISTS password_reset_token TEXT`);
+    await client.query(`ALTER TABLE IF EXISTS Users ADD COLUMN IF NOT EXISTS password_reset_expires TIMESTAMP`);
 
     // Categories
     await client.query(`

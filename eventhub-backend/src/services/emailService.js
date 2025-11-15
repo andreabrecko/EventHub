@@ -311,3 +311,34 @@ async function sendRegistrationConfirmationEmail({ to, action, eventTitle, when,
 }
 
 module.exports.sendRegistrationConfirmationEmail = sendRegistrationConfirmationEmail;
+
+// --- Reset Password ---
+async function sendPasswordResetEmail({ to, token, pool, userId }) {
+  const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:5173';
+  const resetUrl = `${FRONTEND_URL}/reset?resetToken=${encodeURIComponent(token)}`;
+  const from = process.env.FROM_EMAIL || 'no-reply@eventhub.local';
+  const subject = 'Reimposta la tua password - EventHub';
+  const html = buildBaseTemplate(`
+    <h2>Reimposta la password</h2>
+    <p>Hai richiesto di reimpostare la password del tuo account.</p>
+    <p>Clicca il link seguente per procedere:</p>
+    <p><a class="btn" href="${resetUrl}">Reimposta password</a></p>
+    <p class="muted">Se non hai richiesto il reset, ignora questa email.</p>
+  `);
+  if (isDryRun) {
+    console.log('[SMTP dry-run] Invio email reset simulato:', { to, subject, resetUrl });
+    return;
+  }
+  const maxWaitMs = Number(process.env.EMAIL_SEND_TIMEOUT_MS || 8000);
+  const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error(`Timeout invio email (> ${maxWaitMs} ms)`)), maxWaitMs));
+  const sendFn = async () => {
+    await Promise.race([
+      transporter.sendMail({ from, to, subject, html }),
+      timeoutPromise,
+    ]);
+  };
+  await sendFn();
+  try { if (pool) await logEmail({ pool, userId, email: to, type: 'password_reset', subject, status: 'sent' }); } catch (_) {}
+}
+
+module.exports.sendPasswordResetEmail = sendPasswordResetEmail;

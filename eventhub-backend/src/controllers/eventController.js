@@ -18,9 +18,17 @@ async function ensureCoreSchema() {
                 email_verified BOOLEAN NOT NULL DEFAULT FALSE,
                 verification_token TEXT,
                 verification_token_expires TIMESTAMP,
+                password_reset_token TEXT,
+                password_reset_expires TIMESTAMP,
                 created_at TIMESTAMP DEFAULT NOW()
             );
         `);
+        // Garantisci colonne opzionali se mancanti
+        await pool.query(`ALTER TABLE IF EXISTS Users ADD COLUMN IF NOT EXISTS verification_code TEXT`);
+        await pool.query(`ALTER TABLE IF EXISTS Users ADD COLUMN IF NOT EXISTS verification_code_expires TIMESTAMP`);
+        await pool.query(`ALTER TABLE IF EXISTS Users ADD COLUMN IF NOT EXISTS login_notify_enabled BOOLEAN NOT NULL DEFAULT TRUE`);
+        await pool.query(`ALTER TABLE IF EXISTS Users ADD COLUMN IF NOT EXISTS password_reset_token TEXT`);
+        await pool.query(`ALTER TABLE IF EXISTS Users ADD COLUMN IF NOT EXISTS password_reset_expires TIMESTAMP`);
         await pool.query(`
             CREATE TABLE IF NOT EXISTS Categories (
                 id SERIAL PRIMARY KEY,

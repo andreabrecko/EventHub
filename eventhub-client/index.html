@@ -68,10 +68,15 @@
             </div>
             <div id="filters-modal-overlay" class="filters-modal-overlay" hidden>
                 <div id="filters-modal" class="filters-modal" role="dialog" aria-modal="true" aria-labelledby="filters-modal-title">
-                    <h2 id="filters-modal-title">Filtra per categorie</h2>
+                    <h2 id="filters-modal-title">Filtra</h2>
+                    <div class="filters-inline-row" aria-label="Filtri luogo e data" style="display:flex; gap:10px; flex-wrap:wrap; align-items:center; margin: 8px 0 12px;">
+                        <input type="text" id="filters-location" placeholder="Luogo (es. Torino)" aria-label="Filtra per luogo" style="flex:1; padding:0.5em;">
+                        <input type="date" id="filters-date" aria-label="Filtra per data" style="padding:0.5em;">
+                    </div>
                     <div id="filters-list" class="filters-list"></div>
                     <div class="filters-modal-actions">
                         <button id="filters-apply" class="filters-apply">Applica</button>
+                        <button id="filters-clear" class="filters-clear">Pulisci</button>
                         <button id="filters-cancel" class="filters-cancel">Chiudi</button>
                     </div>
                     <p id="filters-modal-message" class="filters-message" aria-live="polite"></p>
@@ -156,6 +161,10 @@
                 <button type="submit">Accedi</button>
                 <p id="login-message"></p>
             </form>
+            <div class="oauth-row" aria-label="Azioni di supporto">
+                <button id="open-reset-button" class="oauth-btn" type="button">Password dimenticata?</button>
+                <button id="open-verify-email-button" class="oauth-btn" type="button">Richiedi verifica email</button>
+            </div>
             <div class="oauth-row" aria-label="Accesso rapido">
                 <button id="github-login-btn" class="oauth-btn github" type="button" aria-label="Accedi con GitHub">
                     <span class="oauth-icon" aria-hidden="true">
@@ -164,6 +173,14 @@
                         </svg>
                     </span>
                     <span class="oauth-text">Accedi con GitHub</span>
+                </button>
+                <button id="google-login-btn" class="oauth-btn google" type="button" aria-label="Accedi con Google">
+                    <span class="oauth-icon" aria-hidden="true">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" xmlns="http://www.w3.org/2000/svg">
+                            <path d="M21.35 11.1h-9.4v2.85h5.4c-.3 1.65-1.8 3.15-3.9 3.15-2.4 0-4.35-1.95-4.35-4.35s1.95-4.35 4.35-4.35c1.2 0 2.25.45 3.05 1.2l1.95-1.95C17.9 6.25 16.25 5.6 14.5 5.6 10.6 5.6 7.45 8.75 7.45 12.65s3.15 6.95 7.05 6.95c4.05 0 6.9-2.85 6.9-6.9 0-.45-.05-.9-.05-1.6z"/>
+                        </svg>
+                    </span>
+                    <span class="oauth-text">Accedi con Google</span>
                 </button>
             </div>
         </div>
@@ -243,6 +260,53 @@
                     <input type="tel" id="admin-create-phone" placeholder="Numero di telefono" required>
                     <button type="submit">Crea Admin</button>
                     <p id="admin-create-message"></p>
+                </form>
+            </div>
+        </div>
+
+        <!-- Overlay: Richiedi verifica email -->
+        <div id="verify-email-overlay" class="filters-modal-overlay" hidden>
+            <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="verify-email-title" style="background:#0f0f0f; color:#eaeaea; border:1px solid rgba(255,255,255,0.15); border-radius:12px; padding:16px; width:min(92vw, 440px);">
+                <h2 id="verify-email-title" style="margin:0 0 12px">Richiedi verifica email</h2>
+                <form id="verify-email-form">
+                    <input type="email" id="verify-email-input" placeholder="La tua email" required style="width:100%; margin-bottom:8px;">
+                    <div style="display:flex; gap:8px; justify-content:flex-end;">
+                        <button id="verify-email-cancel" type="button">Annulla</button>
+                        <button type="submit">Invia</button>
+                    </div>
+                    <p id="verify-email-message"></p>
+                </form>
+            </div>
+        </div>
+
+        <!-- Overlay: Richiedi reset password -->
+        <div id="reset-request-overlay" class="filters-modal-overlay" hidden>
+            <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="reset-request-title" style="background:#0f0f0f; color:#eaeaea; border:1px solid rgba(255,255,255,0.15); border-radius:12px; padding:16px; width:min(92vw, 440px);">
+                <h2 id="reset-request-title" style="margin:0 0 12px">Reset password</h2>
+                <form id="reset-request-form">
+                    <input type="email" id="reset-request-email" placeholder="La tua email" required style="width:100%; margin-bottom:8px;">
+                    <div style="display:flex; gap:8px; justify-content:flex-end;">
+                        <button id="reset-request-cancel" type="button">Annulla</button>
+                        <button type="submit">Invia</button>
+                    </div>
+                    <p id="reset-request-message"></p>
+                </form>
+            </div>
+        </div>
+
+        <!-- Overlay: Conferma nuova password con token -->
+        <div id="reset-confirm-overlay" class="filters-modal-overlay" hidden>
+            <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="reset-confirm-title" style="background:#0f0f0f; color:#eaeaea; border:1px solid rgba(255,255,255,0.15); border-radius:12px; padding:16px; width:min(92vw, 440px);">
+                <h2 id="reset-confirm-title" style="margin:0 0 12px">Imposta nuova password</h2>
+                <form id="reset-confirm-form">
+                    <input type="password" id="reset-new-password" placeholder="Nuova password" required style="width:100%; margin-bottom:8px;">
+                    <input type="password" id="reset-new-password2" placeholder="Conferma password" required style="width:100%; margin-bottom:8px;">
+                    <input type="hidden" id="reset-token-hidden" value="">
+                    <div style="display:flex; gap:8px; justify-content:flex-end;">
+                        <button id="reset-confirm-cancel" type="button">Annulla</button>
+                        <button type="submit">Conferma</button>
+                    </div>
+                    <p id="reset-confirm-message"></p>
                 </form>
             </div>
         </div>

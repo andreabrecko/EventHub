@@ -5,12 +5,22 @@
 const express = require('express');
 const router = express.Router();
 const userController = require('../controllers/userController');
+const verificationController = require('../controllers/verificationController');
 const authMiddleware = require('../middleware/authMiddleware'); 
 
 // Rotte pubbliche
 router.post('/register', userController.registerUser);
 router.post('/login', userController.loginUser);
+router.post('/logout', authMiddleware.protect, userController.logoutUser);
 router.patch('/notifications', authMiddleware.protect, userController.toggleLoginNotifications);
+
+// Verifica email: richiesta token e verifica tramite link
+router.post('/verify-email', verificationController.requestEmailVerification);
+router.get('/verify-email', verificationController.verifyEmail);
+
+// Reset password: richiesta e conferma
+router.post('/password-reset/request', verificationController.requestPasswordReset);
+router.post('/reset-password', verificationController.resetPassword);
 
 // Rotta protetta (esempio): ritorna i dati utente estratti dal token
 router.get('/me', authMiddleware.protect, userController.getMe);

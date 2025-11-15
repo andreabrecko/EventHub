@@ -154,13 +154,16 @@ document.addEventListener('DOMContentLoaded', () => {
     const searchSubmit = document.getElementById('search-modal-submit');
     const searchCancel = document.getElementById('search-modal-cancel');
     const searchMessage = document.getElementById('search-modal-message');
-    const filterButtonEl = document.getElementById('filter-button');
-    const filtersOverlay = document.getElementById('filters-modal-overlay');
-    const filtersModal = document.getElementById('filters-modal');
-    const filtersList = document.getElementById('filters-list');
-    const filtersApply = document.getElementById('filters-apply');
-    const filtersCancel = document.getElementById('filters-cancel');
-    const filtersMessage = document.getElementById('filters-modal-message');
+const filterButtonEl = document.getElementById('filter-button');
+const filtersOverlay = document.getElementById('filters-modal-overlay');
+const filtersModal = document.getElementById('filters-modal');
+const filtersList = document.getElementById('filters-list');
+const filtersApply = document.getElementById('filters-apply');
+const filtersCancel = document.getElementById('filters-cancel');
+const filtersMessage = document.getElementById('filters-modal-message');
+const filtersLocationInput = document.getElementById('filters-location');
+const filtersDateInput = document.getElementById('filters-date');
+const filtersClearBtn = document.getElementById('filters-clear');
     let homeEventsCache = [];
     const eventDomRefs = new Map();
     const eventCategorySelect = document.getElementById('event-category');
@@ -313,7 +316,8 @@ document.addEventListener('DOMContentLoaded', () => {
     const DEFAULT_API_ORIGIN = 'http://localhost:3000';
     const API_ORIGIN = (() => {
         const origin = window.location.origin;
-        if (/:(3000)$/i.test(origin)) return origin;
+        // Se il client è servito direttamente dal backend (3000 o 3001), usa quell'origine
+        if (/:(3000|3001)$/i.test(origin)) return origin;
         return DEFAULT_API_ORIGIN;
     })();
     const API_BASE_URL = `${API_ORIGIN}/api`;
@@ -605,15 +609,18 @@ document.addEventListener('DOMContentLoaded', () => {
         searchOverlay.hidden = true;
         searchMessage.textContent = '';
     }
-    async function openFilters() {
-        if (!filtersOverlay) return;
-        filtersOverlay.hidden = false;
-        filtersMessage.textContent = '';
-        try {
-            const cats = await apiRequest('/events/categories', { timeoutMs: 6000 });
-            if (!Array.isArray(cats)) return;
-            filtersList.innerHTML = '';
-            cats.forEach(cat => {
+async function openFilters() {
+    if (!filtersOverlay) return;
+    filtersOverlay.hidden = false;
+    filtersMessage.textContent = '';
+    // Prefill location/date with current active server filters
+    if (filtersLocationInput) filtersLocationInput.value = activeServerLocation || '';
+    if (filtersDateInput) filtersDateInput.value = activeServerDate || '';
+    try {
+        const cats = await apiRequest('/events/categories', { timeoutMs: 6000 });
+        if (!Array.isArray(cats)) return;
+        filtersList.innerHTML = '';
+        cats.forEach(cat => {
                 const idStr = String(cat.id);
                 const label = document.createElement('label');
                 const cb = document.createElement('input');
@@ -629,22 +636,26 @@ document.addEventListener('DOMContentLoaded', () => {
         } catch (e) {
             filtersMessage.textContent = 'Errore nel caricamento delle categorie.';
         }
-    }
-    function closeFilters() {
-        if (!filtersOverlay) return;
-        filtersOverlay.hidden = true;
-        filtersMessage.textContent = '';
-    }
-    function applyFiltersSelection() {
-        if (!filtersList) return;
-        const newSet = new Set();
-        filtersList.querySelectorAll('input[type=checkbox]').forEach(cb => {
-            if (cb.checked) newSet.add(String(cb.value));
-        });
-        selectedCategoryIds = newSet;
-        applyEventsFilter();
-        closeFilters();
-    }
+}
+function closeFilters() {
+    if (!filtersOverlay) return;
+    filtersOverlay.hidden = true;
+    filtersMessage.textContent = '';
+}
+function applyFiltersSelection() {
+    if (!filtersList) return;
+    const newSet = new Set();
+    filtersList.querySelectorAll('input[type=checkbox]').forEach(cb => {
+        if (cb.checked) newSet.add(String(cb.value));
+    });
+    selectedCategoryIds = newSet;
+    // Aggiorna filtri server e ricarica
+    activeServerLocation = String(filtersLocationInput && filtersLocationInput.value || '').trim();
+    activeServerDate = String(filtersDateInput && filtersDateInput.value || '').trim();
+    // Ricarica dal server; all'interno applicherà i filtri locali
+    fetchEvents();
+    closeFilters();
+}
     async function performSearch() {
         if (!searchInput) return;
         const q = (searchInput.value || '').trim();
@@ -685,9 +696,23 @@ document.addEventListener('DOMContentLoaded', () => {
     if (searchSubmit) searchSubmit.addEventListener('click', performSearch);
     if (searchOverlay) searchOverlay.addEventListener('click', (e) => { if (e.target === searchOverlay) closeSearch(); });
     if (searchModal) searchModal.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeSearch(); if (e.key === 'Enter') performSearch(); });
-    if (filterButtonEl) filterButtonEl.addEventListener('click', openFilters);
-    if (filtersCancel) filtersCancel.addEventListener('click', closeFilters);
-    if (filtersApply) filtersApply.addEventListener('click', applyFiltersSelection);
+if (filterButtonEl) filterButtonEl.addEventListener('click', openFilters);
+if (filtersCancel) filtersCancel.addEventListener('click', closeFilters);
+if (filtersApply) filtersApply.addEventListener('click', applyFiltersSelection);
+if (filtersClearBtn) filtersClearBtn.addEventListener('click', async (e) => {
+    e.preventDefault();
+    // Reset inputs e selezioni categorie
+    if (filtersLocationInput) filtersLocationInput.value = '';
+    if (filtersDateInput) filtersDateInput.value = '';
+    activeServerLocation = '';
+    activeServerDate = '';
+    selectedCategoryIds = new Set();
+    if (filtersList) {
+        filtersList.querySelectorAll('input[type=checkbox]').forEach(cb => { cb.checked = false; });
+    }
+    await fetchEvents();
+    applyEventsFilter();
+});
     if (filtersOverlay) filtersOverlay.addEventListener('click', (e) => { if (e.target === filtersOverlay) closeFilters(); });
     if (filtersModal) filtersModal.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeFilters(); });
 
@@ -708,7 +733,7 @@ document.addEventListener('DOMContentLoaded', () => {
     let socket;
     try {
         if (typeof io !== 'undefined') {
-            socket = io('http://localhost:3000');
+            socket = io('http://localhost:3000', { auth: { token: (localStorage.getItem('token') || null) } });
             socket.on('connect', () => {
                 console.log('Socket connesso');
             });
@@ -785,7 +810,16 @@ document.addEventListener('DOMContentLoaded', () => {
 
     async function fetchEvents() {
         try {
-            const payload = await apiRequest('/events', { timeoutMs: 6000, retry: 2 });
+            // Applica filtri server-side (location, date) se presenti
+            const qs = [];
+            if (activeServerLocation && activeServerLocation.trim() !== '') {
+                qs.push('location=' + encodeURIComponent(activeServerLocation.trim()))
+            }
+            if (activeServerDate && activeServerDate.trim() !== '') {
+                qs.push('date=' + encodeURIComponent(activeServerDate.trim()))
+            }
+            const path = '/events' + (qs.length ? ('?' + qs.join('&')) : '');
+            const payload = await apiRequest(path, { timeoutMs: 6000, retry: 2 });
             let events = Array.isArray(payload) ? payload : (Array.isArray(payload.events) ? payload.events : []);
 
             // Mostra tutti gli eventi approvati, inclusi quelli creati dall'utente
@@ -810,6 +844,9 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     let activeCategoryId = null;
+    // Stato filtri server
+    let activeServerLocation = '';
+    let activeServerDate = '';
     function applyEventsFilter() {
         let filtered = Array.isArray(homeEventsCache) ? [...homeEventsCache] : [];
         const q = String(currentSearchQuery || (eventsSearch && eventsSearch.value) || '').trim().toLowerCase();
@@ -830,6 +867,8 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         displayEvents(filtered);
     }
+
+    // Filtri spostati nel modal "Filtra" (filtersLocationInput/filtersDateInput)
 
     function showPage(pageToShow) {
         homePage.style.display = 'none';
@@ -860,10 +899,34 @@ document.addEventListener('DOMContentLoaded', () => {
     (function initOAuthButtons(){
         try {
             const githubBtn = document.getElementById('github-login-btn');
+            const googleBtn = document.getElementById('google-login-btn');
             if (githubBtn) {
-                githubBtn.addEventListener('click', () => {
+                githubBtn.addEventListener('click', async () => {
                     const origin = API_ORIGIN;
+                    try {
+                        const providers = await apiRequest('/auth/providers', { timeoutMs: 4000, retry: 0 });
+                        if (providers && providers.github === false) {
+                            showToast('GitHub OAuth non configurato sul server.', 'warning');
+                            return;
+                        }
+                    } catch (_) { /* fallback: se endpoint non disponibile, procedo come prima */ }
                     window.location.href = `${origin}/api/auth/github`;
+                });
+            }
+            if (googleBtn) {
+                googleBtn.addEventListener('click', async () => {
+                    const origin = API_ORIGIN;
+                    try {
+                        const providers = await apiRequest('/auth/providers', { timeoutMs: 4000, retry: 0 });
+                        if (!providers || providers.google !== true) {
+                            showToast('Google OAuth non configurato sul server.', 'warning');
+                            return;
+                        }
+                    } catch (_) { /* se endpoint non disponibile, evito di forzare redirect Google per sicurezza */
+                        showToast('Impossibile verificare Google OAuth. Controlla la configurazione.', 'warning');
+                        return;
+                    }
+                    window.location.href = `${origin}/api/auth/google`;
                 });
             }
         } catch(_) {}
@@ -1404,14 +1467,17 @@ document.addEventListener('DOMContentLoaded', () => {
         showPage(loginPage);
     });
 
-    logoutButton.addEventListener('click', (e) => {
+    logoutButton.addEventListener('click', async (e) => {
         e.preventDefault();
+        // Prova a chiamare l'endpoint di logout (opzionale)
+        try { await apiRequest('/users/logout', { method: 'POST', useAuth: true, timeoutMs: 4000 }); } catch(_) {}
         localStorage.removeItem('token');
         localStorage.removeItem('username');
         localStorage.removeItem('role');
         localStorage.removeItem('userId');
         currentUser = null;
         updateAuthUI();
+        showToast('Logout effettuato.', 'success');
         showPage(homePage);
         fetchEvents();
     });
@@ -1574,6 +1640,135 @@ document.addEventListener('DOMContentLoaded', () => {
             loginMessage.className = 'error-message';
         }
     });
+
+    // --- Helpers: open/close overlays ---
+    function openOverlay(el) { if (!el) return; el.hidden = false; }
+    function closeOverlay(el) { if (!el) return; el.hidden = true; }
+
+    // --- Verifica email ---
+    if (openVerifyEmailButton) {
+        openVerifyEmailButton.addEventListener('click', (e) => {
+            e.preventDefault();
+            verifyEmailMessage.textContent = '';
+            if (verifyEmailInput) verifyEmailInput.value = localStorage.getItem('usernameEmail') || '';
+            openOverlay(verifyEmailOverlay);
+        });
+    }
+    if (verifyEmailCancel) {
+        verifyEmailCancel.addEventListener('click', (e) => { e.preventDefault(); closeOverlay(verifyEmailOverlay); });
+    }
+    if (verifyEmailOverlay) {
+        verifyEmailOverlay.addEventListener('click', (e) => { if (e.target === verifyEmailOverlay) closeOverlay(verifyEmailOverlay); });
+    }
+    if (verifyEmailForm) {
+        verifyEmailForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const email = (verifyEmailInput && verifyEmailInput.value) || '';
+            if (!isValidEmail(email)) {
+                verifyEmailMessage.textContent = 'Email non valida.';
+                verifyEmailMessage.className = 'error-message';
+                return;
+            }
+            try {
+                const r = await apiRequest('/users/verify-email', { method: 'POST', timeoutMs: 8000, body: { email } });
+                verifyEmailMessage.textContent = r && r.message ? r.message : 'Se l’email esiste, invieremo il link.';
+                verifyEmailMessage.className = 'success-message';
+                showToast('Email di verifica inviata (se esiste).', 'success');
+                setTimeout(() => closeOverlay(verifyEmailOverlay), 1000);
+            } catch (err) {
+                verifyEmailMessage.textContent = err?.data?.error || err?.message || 'Errore durante l’invio.';
+                verifyEmailMessage.className = 'error-message';
+            }
+        });
+    }
+
+    // --- Reset password: richiesta ---
+    if (openResetButton) {
+        openResetButton.addEventListener('click', (e) => {
+            e.preventDefault();
+            resetRequestMessage.textContent = '';
+            openOverlay(resetRequestOverlay);
+        });
+    }
+    if (resetRequestCancel) {
+        resetRequestCancel.addEventListener('click', (e) => { e.preventDefault(); closeOverlay(resetRequestOverlay); });
+    }
+    if (resetRequestOverlay) {
+        resetRequestOverlay.addEventListener('click', (e) => { if (e.target === resetRequestOverlay) closeOverlay(resetRequestOverlay); });
+    }
+    if (resetRequestForm) {
+        resetRequestForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const email = (resetRequestEmail && resetRequestEmail.value) || '';
+            if (!isValidEmail(email)) {
+                resetRequestMessage.textContent = 'Email non valida.';
+                resetRequestMessage.className = 'error-message';
+                return;
+            }
+            try {
+                const r = await apiRequest('/users/password-reset/request', { method: 'POST', timeoutMs: 8000, body: { email } });
+                resetRequestMessage.textContent = r && r.message ? r.message : 'Se l’email esiste, invieremo le istruzioni.';
+                resetRequestMessage.className = 'success-message';
+                showToast('Istruzioni reset inviate (se esiste).', 'success');
+                setTimeout(() => closeOverlay(resetRequestOverlay), 1000);
+            } catch (err) {
+                resetRequestMessage.textContent = err?.data?.error || err?.message || 'Errore durante la richiesta.';
+                resetRequestMessage.className = 'error-message';
+            }
+        });
+    }
+
+    // --- Reset password: conferma con token ---
+    if (resetConfirmCancel) {
+        resetConfirmCancel.addEventListener('click', (e) => { e.preventDefault(); closeOverlay(resetConfirmOverlay); });
+    }
+    if (resetConfirmOverlay) {
+        resetConfirmOverlay.addEventListener('click', (e) => { if (e.target === resetConfirmOverlay) closeOverlay(resetConfirmOverlay); });
+    }
+    if (resetConfirmForm) {
+        resetConfirmForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const p1 = resetNewPassword && resetNewPassword.value || '';
+            const p2 = resetNewPassword2 && resetNewPassword2.value || '';
+            const token = resetTokenHidden && resetTokenHidden.value || '';
+            if (!p1 || !p2 || p1 !== p2) {
+                resetConfirmMessage.textContent = 'Le password non coincidono.';
+                resetConfirmMessage.className = 'error-message';
+                return;
+            }
+            if (!isStrongPassword(p1)) {
+                resetConfirmMessage.textContent = 'Password troppo debole: almeno 8 caratteri, maiuscola, minuscola, numero e simbolo.';
+                resetConfirmMessage.className = 'error-message';
+                return;
+            }
+            try {
+                const r = await apiRequest('/users/reset-password', { method: 'POST', timeoutMs: 8000, body: { token, newPassword: p1 } });
+                resetConfirmMessage.textContent = r && r.message ? r.message : 'Password aggiornata con successo.';
+                resetConfirmMessage.className = 'success-message';
+                showToast('Password aggiornata. Accedi con la nuova password.', 'success');
+                setTimeout(() => { closeOverlay(resetConfirmOverlay); showPage(loginPage); }, 800);
+                try {
+                    const url = new URL(window.location.href);
+                    url.searchParams.delete('resetToken');
+                    window.history.replaceState({}, document.title, url.toString());
+                } catch (_){}
+            } catch (err) {
+                resetConfirmMessage.textContent = err?.data?.error || err?.message || 'Errore durante la conferma.';
+                resetConfirmMessage.className = 'error-message';
+            }
+        });
+    }
+
+    // Se presente il token nel querystring, apri direttamente l’overlay di conferma
+    try {
+        const url = new URL(window.location.href);
+        const rt = url.searchParams.get('resetToken');
+        if (rt && resetTokenHidden) {
+            resetTokenHidden.value = rt;
+            resetConfirmMessage.textContent = '';
+            openOverlay(resetConfirmOverlay);
+        }
+    } catch(_) {}
 
 
 
@@ -1835,8 +2030,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         if (socket) {
             try {
-                const userId = localStorage.getItem('userId');
-                socket.emit('joinEventChat', { eventId: ev.id, userId });
+                socket.emit('joinEventChat', { eventId: ev.id });
                 socket.off('registrationChange');
                 socket.on('registrationChange', (payload = {}) => {
                     if (String(payload.eventId) !== String(ev.id)) return;
@@ -1904,7 +2098,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         const text = (chatInput && chatInput.value || '').trim();
                         if (!text) return;
                         try {
-                            socket.emit('chatMessage', { eventId: ev.id, userId, message: text });
+                            socket.emit('chatMessage', { eventId: ev.id, message: text });
                             if (chatInput) chatInput.value = '';
                         } catch (_) {}
                     };
@@ -1923,3 +2117,25 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 });
+    // UI: Verifica email e Reset password
+    const openResetButton = document.getElementById('open-reset-button');
+    const openVerifyEmailButton = document.getElementById('open-verify-email-button');
+    const verifyEmailOverlay = document.getElementById('verify-email-overlay');
+    const verifyEmailForm = document.getElementById('verify-email-form');
+    const verifyEmailInput = document.getElementById('verify-email-input');
+    const verifyEmailMessage = document.getElementById('verify-email-message');
+    const verifyEmailCancel = document.getElementById('verify-email-cancel');
+
+    const resetRequestOverlay = document.getElementById('reset-request-overlay');
+    const resetRequestForm = document.getElementById('reset-request-form');
+    const resetRequestEmail = document.getElementById('reset-request-email');
+    const resetRequestMessage = document.getElementById('reset-request-message');
+    const resetRequestCancel = document.getElementById('reset-request-cancel');
+
+    const resetConfirmOverlay = document.getElementById('reset-confirm-overlay');
+    const resetConfirmForm = document.getElementById('reset-confirm-form');
+    const resetNewPassword = document.getElementById('reset-new-password');
+    const resetNewPassword2 = document.getElementById('reset-new-password2');
+    const resetTokenHidden = document.getElementById('reset-token-hidden');
+    const resetConfirmMessage = document.getElementById('reset-confirm-message');
+    const resetConfirmCancel = document.getElementById('reset-confirm-cancel');

@@ -1,12 +1,13 @@
 // File: src/middleware/authMiddleware.js
 
 const jwt = require('jsonwebtoken');
+const { pool } = require('../config/db');
 
 /**
  * Middleware: Protegge l'endpoint verificando il JWT nell'header Authorization.
  * Aggiunge l'oggetto utente decodificato (id, role) a req.user.
  */
-exports.protect = (req, res, next) => {
+exports.protect = async (req, res, next) => {
     let token;
 
     // 1. Estrai il token dall'header 'Authorization: Bearer <token>'
@@ -22,6 +23,16 @@ exports.protect = (req, res, next) => {
     try {
         const decoded = jwt.verify(token, process.env.JWT_SECRET);
         req.user = decoded;
+        // Enforce blocked users across all protected endpoints
+        try {
+            const userRes = await pool.query('SELECT is_blocked FROM Users WHERE id = $1', [decoded.id]);
+            const isBlocked = userRes.rows?.[0]?.is_blocked === true;
+            if (isBlocked) {
+                return res.status(403).json({ error: 'Account bloccato. Contatta il supporto.' });
+            }
+        } catch (_) {
+            // If DB check fails, proceed without blocking to avoid false positives
+        }
         next();
     } catch (error) {
         // console.error('Error in authMiddleware:', error);

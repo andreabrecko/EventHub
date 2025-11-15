@@ -60,6 +60,17 @@ exports.registerUser = async (req, res) => {
             console.error('Errore invio email benvenuto:', e?.message || e);
         }
 
+        // Invio automatico email di verifica
+        try {
+            const token = crypto.randomBytes(32).toString('hex');
+            const expires = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24 ore
+            await pool.query('UPDATE Users SET verification_token=$1, verification_token_expires=$2 WHERE id=$3', [token, expires, newUser.id]);
+            const { sendVerificationEmail } = require('../services/emailService');
+            await sendVerificationEmail({ to: newUser.email, token, pool, userId: newUser.id });
+        } catch (e) {
+            console.error('Errore invio email verifica automatica:', e?.message || e);
+        }
+
         res.status(201).json({
             message: `Benvenuto ${newUser.username}! Registrazione completata.`,
             user: { id: newUser.id, username: newUser.username, role: newUser.role }
@@ -71,6 +82,17 @@ exports.registerUser = async (req, res) => {
         }
         console.error("Errore registrazione:", err);
         res.status(500).json({ error: 'Errore interno del server.' });
+    }
+};
+
+// --- Logout Utente (POST /api/users/logout) ---
+exports.logoutUser = async (req, res) => {
+    try {
+        // Placeholder per eventuale revoca token lato server
+        return res.status(200).json({ message: 'Logout completato.' });
+    } catch (err) {
+        console.error('Errore logout:', err?.message || err);
+        return res.status(500).json({ error: 'Errore interno del server.' });
     }
 };
 

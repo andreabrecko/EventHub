@@ -23,6 +23,26 @@ const io = new Server(server, {
         origin: '*'
     }
 });
+// Socket.IO auth middleware: JWT opzionale nell'handshake
+try {
+    const jwt = require('jsonwebtoken');
+    io.use((socket, next) => {
+        try {
+            const token = socket.handshake?.auth?.token || socket.handshake?.query?.token || null;
+            if (token) {
+                try {
+                    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+                    socket.user = decoded; // { id, role }
+                } catch (e) {
+                    // Token non valido: non blocchiamo la connessione, ma nessun privilegio
+                }
+            }
+            return next();
+        } catch (err) {
+            return next();
+        }
+    });
+} catch (_) {}
 socketManager.setIoInstance(io);
 // Se disponibile, collega i listener di socket
 try {
