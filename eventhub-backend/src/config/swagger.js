@@ -140,7 +140,7 @@ const swaggerSpec = {
             }
           }
         },
-        responses: { '201': { description: 'Evento creato' }, '400': { description: 'Dati non validi' } }
+        responses: { '201': { description: 'Evento creato' }, '400': { description: 'Dati non validi' }, '403': { description: 'Email non verificata o privilegi insufficienti' } }
       }
     },
     '/events/{id}': {
@@ -162,20 +162,20 @@ const swaggerSpec = {
         summary: 'Iscrizione all’evento',
         tags: ['Events'],
         parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }],
-        responses: { '201': { description: 'Iscritto' }, '409': { description: 'Già iscritto' }, '400': { description: 'Evento pieno' }, '404': { description: 'Evento non valido' } }
+        responses: { '201': { description: 'Iscritto' }, '409': { description: 'Già iscritto' }, '400': { description: 'Evento pieno' }, '404': { description: 'Evento non valido' }, '403': { description: 'Email non verificata o account bloccato' } }
       },
       delete: {
         summary: 'Annulla iscrizione',
         tags: ['Events'],
         parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }],
-        responses: { '200': { description: 'Iscrizione annullata' }, '404': { description: 'Iscrizione non trovata' } }
+        responses: { '200': { description: 'Iscrizione annullata' }, '404': { description: 'Iscrizione non trovata' }, '403': { description: 'Email non verificata o account bloccato' } }
       }
     },
     '/admin/events/pending': {
       get: {
         summary: 'Eventi in attesa di approvazione',
         tags: ['Admin'],
-        responses: { '200': { description: 'Lista pending' } }
+        responses: { '200': { description: 'Lista pending' }, '403': { description: 'Privilegi admin richiesti' } }
       }
     },
     '/admin/events/{id}/approve': {
@@ -187,14 +187,14 @@ const swaggerSpec = {
           required: true,
           content: { 'application/json': { schema: { type: 'object', properties: { isApproved: { type: 'boolean' } }, required: ['isApproved'] } } }
         },
-        responses: { '200': { description: 'Aggiornato' }, '404': { description: 'Non trovato' } }
+        responses: { '200': { description: 'Aggiornato' }, '404': { description: 'Non trovato' }, '403': { description: 'Privilegi admin richiesti' } }
       }
     },
     '/admin/users': {
       get: {
         summary: 'Lista utenti',
         tags: ['Admin'],
-        responses: { '200': { description: 'Lista utenti' } }
+        responses: { '200': { description: 'Lista utenti' }, '403': { description: 'Privilegi admin richiesti' } }
       }
     },
     '/admin/users/{id}/block': {
@@ -206,7 +206,7 @@ const swaggerSpec = {
           required: true,
           content: { 'application/json': { schema: { type: 'object', properties: { isBlocked: { type: 'boolean' } }, required: ['isBlocked'] } } }
         },
-        responses: { '200': { description: 'Aggiornato' }, '404': { description: 'Non trovato' } }
+        responses: { '200': { description: 'Aggiornato' }, '404': { description: 'Non trovato' }, '403': { description: 'Privilegi admin richiesti' } }
       }
     },
     '/users/me/events': {

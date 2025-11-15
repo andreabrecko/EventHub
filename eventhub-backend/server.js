@@ -10,6 +10,7 @@ const app = require('./src/app'); // Importa l'app configurata da src/app.js
 const http = require('http'); // Modulo standard per creare un server HTTP
 const { Server } = require('socket.io');
 const socketManager = require('./src/utils/socketManager');
+const { pool } = require('./src/config/db');
 
 const PORT = process.env.PORT || 3000;
 
@@ -18,21 +19,33 @@ const PORT = process.env.PORT || 3000;
 // Crea un server HTTP dal tuo server Express
 const server = http.createServer(app);
 // Inizializza Socket.IO e condividi l'istanza globalmente
+// Socket.IO CORS: rispetta ALLOWED_ORIGINS come in Express
+const allowedOrigins = (process.env.ALLOWED_ORIGINS || '*')
+  .split(',')
+  .map(s => s.trim())
+  .filter(Boolean);
 const io = new Server(server, {
     cors: {
-        origin: '*'
+        origin: allowedOrigins.includes('*') ? '*' : allowedOrigins
     }
 });
 // Socket.IO auth middleware: JWT opzionale nell'handshake
 try {
     const jwt = require('jsonwebtoken');
-    io.use((socket, next) => {
+    io.use(async (socket, next) => {
         try {
             const token = socket.handshake?.auth?.token || socket.handshake?.query?.token || null;
             if (token) {
                 try {
                     const decoded = jwt.verify(token, process.env.JWT_SECRET);
-                    socket.user = decoded; // { id, role }
+                    const profile = { id: decoded.id, role: decoded.role };
+                    try {
+                        const r = await pool.query('SELECT email_verified, is_blocked FROM Users WHERE id = $1', [decoded.id]);
+                        const row = r.rows && r.rows[0];
+                        profile.email_verified = !!(row && row.email_verified === true);
+                        profile.is_blocked = !!(row && row.is_blocked === true);
+                    } catch (_) {}
+                    socket.user = profile; // { id, role, email_verified, is_blocked }
                 } catch (e) {
                     // Token non valido: non blocchiamo la connessione, ma nessun privilegio
                 }
@@ -76,7 +89,7 @@ process.on('uncaughtException', (err, origin) => {
     server.close(() => process.exit(1));
 });
 
-const { connectDBWithRetry, startKeepAlivePing, pool } = require('./src/config/db');
+const { connectDBWithRetry, startKeepAlivePing } = require('./src/config/db');
 const { initSchema } = require('./src/config/initSchema');
 const { seedCategories } = require('./src/controllers/eventController');
 const { validateEmailEnv, verifySMTP } = require('./src/services/emailService');

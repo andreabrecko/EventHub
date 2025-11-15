@@ -57,6 +57,7 @@ router.get('/', eventController.getEvents);
 // POST /api/events (Creazione Evento)
 router.post('/', 
     authMiddleware.protect,
+    authMiddleware.requireVerifiedEmail,
     uploadPhotosMiddleware,
     eventController.createEvent
 );
@@ -83,13 +84,15 @@ router.delete('/:id',
 // Rotte per Iscrizione e Annullamento
 // POST /api/events/:id/register (Iscrizione)
 router.post('/:id/register', 
-    authMiddleware.protect, 
+    authMiddleware.protect,
+    authMiddleware.requireVerifiedEmail,
     eventController.registerForEvent
 );
 
 // DELETE /api/events/:id/register (Annullamento iscrizione)
 router.delete('/:id/register', 
-    authMiddleware.protect, 
+    authMiddleware.protect,
+    authMiddleware.requireVerifiedEmail,
     eventController.unregisterFromEvent
 );
 

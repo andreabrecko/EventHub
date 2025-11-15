@@ -1,0 +1,7 @@
+node_modules
+eventhub-backend/node_modules
+eventhub-client/node_modules
+.git
+.env
+npm-debug.log*
+**/*.log

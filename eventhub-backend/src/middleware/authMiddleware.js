@@ -53,3 +53,27 @@ exports.restrictTo = (...allowedRoles) => {
         next();
     };
 };
+
+/**
+ * Middleware: Richiede che l'utente abbia email verificata.
+ * Da usare dopo `protect` sugli endpoint che devono essere limitati
+ * (creazione eventi, iscrizione/annullamento, ecc.).
+ */
+exports.requireVerifiedEmail = async (req, res, next) => {
+    try {
+        if (!req.user || !req.user.id) {
+            return res.status(401).json({ error: 'Autenticazione richiesta.' });
+        }
+        const r = await pool.query('SELECT email_verified, is_blocked FROM Users WHERE id = $1', [req.user.id]);
+        const row = r.rows && r.rows[0];
+        if (row && row.is_blocked === true) {
+            return res.status(403).json({ error: 'Account bloccato. Contatta il supporto.' });
+        }
+        if (!row || row.email_verified !== true) {
+            return res.status(403).json({ error: 'Email non verificata. Verifica la tua email per procedere.' });
+        }
+        return next();
+    } catch (err) {
+        return res.status(500).json({ error: 'Errore verifica stato email.' });
+    }
+};

@@ -2083,6 +2083,13 @@ if (filtersClearBtn) filtersClearBtn.addEventListener('click', async (e) => {
                     history.forEach(renderMsg);
                 });
 
+                // Errori chat (autenticazione, account bloccato, email non verificata, ecc.)
+                socket.off('chatError');
+                socket.on('chatError', (payload = {}) => {
+                    const msg = payload.message || 'Errore chat.';
+                    try { showToast(msg, 'error'); } catch (_) { console.warn(msg); }
+                });
+
                 // Nuovi messaggi broadcast
                 socket.off('newMessage');
                 socket.on('newMessage', (m = {}) => {

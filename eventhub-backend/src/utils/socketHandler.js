@@ -22,9 +22,13 @@ module.exports = (io) => {
 
             try {
                 // Verifica che l'utente non sia bloccato
-                const bRes = await pool.query('SELECT is_blocked FROM Users WHERE id = $1', [user.id]);
-                if (bRes.rows?.[0]?.is_blocked) {
+                const uRes = await pool.query('SELECT email_verified, is_blocked FROM Users WHERE id = $1', [user.id]);
+                const uRow = uRes.rows?.[0] || {};
+                if (uRow.is_blocked === true) {
                     return socket.emit('chatError', { message: 'Account bloccato. Accesso alla chat negato.' });
+                }
+                if (uRow.email_verified !== true) {
+                    return socket.emit('chatError', { message: 'Email non verificata. Verifica per usare la chat.' });
                 }
 
                 // Verifica se è creatore dell'evento o iscritto
@@ -77,10 +81,14 @@ module.exports = (io) => {
             }
 
             try {
-                // Verifica blocco
-                const bRes = await pool.query('SELECT is_blocked FROM Users WHERE id = $1', [user.id]);
-                if (bRes.rows?.[0]?.is_blocked) {
+                // Verifica blocco e email verificata
+                const uRes = await pool.query('SELECT email_verified, is_blocked FROM Users WHERE id = $1', [user.id]);
+                const uRow = uRes.rows?.[0] || {};
+                if (uRow.is_blocked === true) {
                     return socket.emit('chatError', { message: 'Account bloccato. Invio messaggi negato.' });
+                }
+                if (uRow.email_verified !== true) {
+                    return socket.emit('chatError', { message: 'Email non verificata. Non puoi inviare messaggi.' });
                 }
 
                 // Verifica autorizzazione (owner o iscritto)

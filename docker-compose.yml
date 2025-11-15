@@ -1,0 +1,36 @@
+version: '3.8'
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: eventhub
+      POSTGRES_PASSWORD: eventhub
+      POSTGRES_DB: eventhub
+    ports:
+      - "5432:5432"
+    volumes:
+      - db_data:/var/lib/postgresql/data
+
+  backend:
+    build:
+      context: .
+      dockerfile: eventhub-backend/Dockerfile
+    environment:
+      DB_HOST: db
+      DB_PORT: 5432
+      DB_USER: eventhub
+      DB_PASSWORD: eventhub
+      DB_NAME: eventhub
+      DB_SSL: "false"
+      JWT_SECRET: "change_me_in_production"
+      ALLOWED_ORIGINS: "http://localhost:3000,http://localhost:5173"
+    ports:
+      - "3000:3000"
+    depends_on:
+      - db
+    volumes:
+      - ./eventhub-backend/uploads:/app/eventhub-backend/uploads
+      - ./eventhub-client:/app/eventhub-client:ro
+
+volumes:
+  db_data:

@@ -8,6 +8,7 @@ const app = express();
 const cors = require('cors');
 const path = require('path');
 const errorHandler = require('./utils/errorHandler');
+const securityHeaders = require('./middleware/securityHeaders');
 const passport = require('passport');
 const { configurePassport } = require('./config/passport');
 const oauthRoutes = require('./routes/oauthRoutes');
@@ -23,8 +24,21 @@ const mainRouter = require('./routes/index');
 // --- Middleware Globali ---
 app.use(express.json()); // Per parsare i body JSON nelle richieste POST/PUT
 app.use(express.urlencoded({ extended: true }));
+app.use(securityHeaders);
+// CORS dinamico basato su env ALLOWED_ORIGINS (lista separata da virgole)
+const allowedOrigins = (process.env.ALLOWED_ORIGINS || '*')
+  .split(',')
+  .map(s => s.trim())
+  .filter(Boolean);
+
 app.use(cors({
-    origin: '*'
+  origin: (origin, callback) => {
+    // Permetti richieste senza origin (es. curl, server-side) e wildcard
+    if (!origin || allowedOrigins.includes('*')) return callback(null, true);
+    return allowedOrigins.includes(origin)
+      ? callback(null, true)
+      : callback(new Error('Not allowed by CORS'));
+  }
 }));
 app.use(passport.initialize());
 configurePassport();
